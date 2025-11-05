@@ -1,2 +1,4 @@
 Flask==3.0.3
 line-bot-sdk==3.11.0
+gspread==6.2.1
+google-auth==2.41.1
