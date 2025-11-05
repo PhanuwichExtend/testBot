@@ -51,7 +51,7 @@ def handle_message(event):
     import re
     SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
     CREDS_FILE = 'credentials.json'
-    SPREADSHEET_ID = '11HghFTGYjjw9Guel1Twux64f6TfgeON11qyHEQDZktA'
+    SPREADSHEET_ID = '12WFiY5OpzRsqgagld_pOqSeknaYcWtVv1iKie3JvonY'
 
     user_message = event.message.text.strip()
 
@@ -108,6 +108,8 @@ def handle_message(event):
         import gspread
         from google.oauth2.service_account import Credentials
         creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
+        print("//////////////////")
+        print("Using credentials:", creds.service_account_email)
         gc = gspread.authorize(creds)
         sh = gc.open_by_key(SPREADSHEET_ID)
         worksheet = sh.sheet1
