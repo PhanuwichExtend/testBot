@@ -1,6 +1,7 @@
 from flask import Flask, request, abort
 import os
-import csv
+import gspread
+from google.oauth2.service_account import Credentials
 
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
@@ -44,7 +45,11 @@ def webhook():
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_message = event.message.text.strip()
-    csv_file = 'data.csv'
+
+    # Google Sheets config
+    SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+    CREDS_FILE = 'credentials.json'  # ต้องวางไฟล์นี้ไว้ในโฟลเดอร์เดียวกับ app.py
+    SPREADSHEET_ID = '11HghFTGYjjw9Guel1Twux64f6TfgeON11qyHEQDZktA'
 
     try:
         name, amount = user_message.split()
@@ -61,29 +66,20 @@ def handle_message(event):
             )
         return
 
-    # อ่านข้อมูลเก่า
-    rows, total = [], 0
-    if os.path.exists(csv_file):
-        with open(csv_file, 'r', encoding='utf-8', newline='') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                rows.append(row)
-                try:
-                    total += int(row['amount'])
-                except:
-                    pass
 
-    # เพิ่มข้อมูลใหม่
-    total += amount
-    rows.append({'name': name, 'amount': amount, 'total': total})
-
-    # เขียนข้อมูลใหม่
-    with open(csv_file, 'w', encoding='utf-8', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=['name', 'amount', 'total'])
-        writer.writeheader()
-        writer.writerows(rows)
-
-    reply_text = f"บันทึกแล้ว: {name} {amount}\nยอดรวมล่าสุด: {total}"
+    # อ่านและบันทึกข้อมูลลง Google Sheets
+    try:
+        creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
+        gc = gspread.authorize(creds)
+        sh = gc.open_by_key(SPREADSHEET_ID)
+        worksheet = sh.sheet1
+        records = worksheet.get_all_records()
+        total = sum(int(row['amount']) for row in records if str(row['amount']).isdigit()) if records else 0
+        total += amount
+        worksheet.append_row([name, amount, total])
+        reply_text = f"บันทึกแล้ว: {name} {amount}\nยอดรวมล่าสุด: {total}"
+    except Exception as e:
+        reply_text = f"เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Google Sheets: {e}"
 
     # ✅ ตอบกลับผู้ใช้
     with ApiClient(configuration) as api_client:
