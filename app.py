@@ -87,16 +87,18 @@ def handle_message(event):
         return
     date_str = date_match.group(1).strip()
 
+
     # 2. แยกแต่ละชื่อและยอดรวม
     lines = user_message.splitlines()
     data_lines = []
     found_date = False
     for line in lines:
-        if found_date:
-            data_lines.append(line)
         if 'วันที่' in line:
             found_date = True
-    # data_lines จะเริ่มที่บรรทัดแรกหลังวันที่
+            continue
+        if not found_date:
+            continue
+        data_lines.append(line)
 
     sales = {}
     current_name = None
@@ -109,13 +111,21 @@ def handle_message(event):
             current_name = line.replace(' ', '')
             sales[current_name] = []
         elif current_name:
-            # พยายามดึงตัวเลขยอดขายจากแต่ละบรรทัด
-            nums = re.findall(r'\d+(?:\.\d+)?', line)
-for n in nums:
-    try:
-        sales[current_name].append(float(n))
-    except:
-        pass
+            # ตัดเลขลำดับหัวข้อ เช่น 1.500 หรือ 2.800 ให้เหลือแค่ 500, 800
+            m = re.match(r'\d+\.(\d+)', line)
+            if m:
+                try:
+                    sales[current_name].append(int(m.group(1)))
+                except:
+                    pass
+            else:
+                # ถ้าไม่ใช่รูปแบบหัวข้อ ให้ดึงเลขจำนวนเต็มทั้งหมดในบรรทัด
+                nums = re.findall(r'\d+', line)
+                for n in nums:
+                    try:
+                        sales[current_name].append(int(n))
+                    except:
+                        pass
 
     summary = {name: sum(vals) for name, vals in sales.items()}
 
