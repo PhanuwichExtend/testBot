@@ -21,8 +21,15 @@ CHANNEL_ACCESS_TOKEN = '0JHzuf9YlOGA7xZgkeuQjeAk9s9feQ/SDOoUd977jKXjKTn1UlSeRD9g
 CHANNEL_SECRET = '9a74e13876fe461c98809f0ffcacdd39'
 
 if not os.path.exists('credentials.json'):
-    with open('credentials.json', 'wb') as f:
-        f.write(base64.b64decode(CREDENTIALS_B64))
+    try:
+        missing_padding = len(CREDENTIALS_B64) % 4
+        if missing_padding:
+            CREDENTIALS_B64 += '=' * (4 - missing_padding)
+        decoded = base64.b64decode(CREDENTIALS_B64)
+        with open('credentials.json', 'wb') as f:
+            f.write(decoded)
+    except Exception as e:
+        print("❌ Error decoding base64:", e)
 
 # LINE SDK config
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
