@@ -10,7 +10,7 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage
 app = Flask(__name__)
 
 # 🔑 ใส่ค่า Channel Access Token และ Channel Secret ของคุณที่นี่
-CHANNEL_ACCESS_TOKEN = '2008421597'
+CHANNEL_ACCESS_TOKEN = '0JHzuf9YlOGA7xZgkeuQjeAk9s9feQ/SDOoUd977jKXjKTn1UlSeRD9gEVYLdjI2LDhM1ps3Nawjp7/AW/qaxyvyScv03ZtAFRtCyx2s/2kiMz+QFkE/m9BXg86/vg1wuSE6I+wp1pzDZF6JhWk+5AdB04t89/1O/w1cDnyilFU='
 CHANNEL_SECRET = '9a74e13876fe461c98809f0ffcacdd39'
 
 line_bot_api = MessagingApi(CHANNEL_ACCESS_TOKEN)
