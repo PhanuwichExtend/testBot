@@ -110,13 +110,12 @@ def handle_message(event):
             sales[current_name] = []
         elif current_name:
             # พยายามดึงตัวเลขยอดขายจากแต่ละบรรทัด
-            nums = re.findall(r'[\d,]+', line)
-            for n in nums:
-                n = n.replace(',', '')
-                try:
-                    sales[current_name].append(int(n))
-                except:
-                    pass
+            nums = re.findall(r'\d+(?:\.\d+)?', line)
+for n in nums:
+    try:
+        sales[current_name].append(float(n))
+    except:
+        pass
 
     summary = {name: sum(vals) for name, vals in sales.items()}
 
