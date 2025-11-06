@@ -137,6 +137,78 @@ def handle_message(event):
         if cash_block:
             total_by_person['ยอดเงินสด'] = "\n".join(cash_block)
 
+          # ✅ เขียนลง Google Sheet
+        creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
+        gc = gspread.authorize(creds)
+        sh = gc.open_by_key(SPREADSHEET_ID)
+        worksheet = sh.sheet1
+
+        records = worksheet.get_all_records()
+
+        # ✅ รวมรายชื่อทั้งหมด (ชื่อพนักงาน + 'ยอดเงินสด')
+        all_names = set()
+        for r in records:
+            for k in r.keys():
+                if k not in ['วันที่', 'date', '', None]:
+                    all_names.add(k)
+        for n in total_by_person.keys():
+            all_names.add(n)
+        all_names = sorted(list(all_names))
+
+        # ✅ รวมข้อมูลเก่าจากชีตเป็น dict
+        date_dict = {}
+        for r in records:
+            d = r.get('วันที่') or r.get('date')
+            if d and str(d).strip() != 'รวม':
+                date_dict[d] = {n: r.get(n, '') for n in all_names}
+
+        # ✅ ถ้าวันที่นี้ยังไม่มีในชีต ให้เพิ่มใหม่
+        if date_str not in date_dict:
+            date_dict[date_str] = {n: '' for n in all_names}
+
+        # ✅ เติมค่าจาก total_by_person ลงในวันที่นั้น
+        for name, val in total_by_person.items():
+            date_dict[date_str][name] = val
+
+        # ✅ สร้างตารางใหม่
+        header = ['วันที่'] + all_names
+        rows = [header]
+        for d in sorted(date_dict.keys()):
+            row = [d] + [date_dict[d].get(n, '') for n in all_names]
+            rows.append(row)
+
+        # ✅ แถวรวม
+        total_row = ['รวม']
+        for n in all_names:
+            col_sum = 0
+            for d in date_dict.keys():
+                v = date_dict[d].get(n, '')
+                try:
+                    col_sum += int(v)
+                except:
+                    pass
+            total_row.append(col_sum if col_sum else '')
+        rows.append(total_row)
+
+        worksheet.clear()
+        worksheet.append_rows(rows)
+
+        # ✅ สร้างข้อความตอบกลับ
+        reply_text = f"📅 บันทึกยอดขายวันที่ {date_str} เรียบร้อยแล้ว!\n"
+        for n, v in total_by_person.items():
+            if isinstance(v, list):
+                v = sum(v)
+            reply_text += f"\n{n}: {v}"
+
+        # ✅ ส่งข้อความกลับ LINE
+        with ApiClient(configuration) as api_client:
+            messaging_api = MessagingApi(api_client)
+            messaging_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=reply_text)]
+                )
+            )
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
