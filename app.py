@@ -66,6 +66,7 @@ def webhook():
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     import re
+    import datetime
     import gspread
     from google.oauth2.service_account import Credentials
     from linebot.v3.messaging import (
@@ -78,105 +79,176 @@ def handle_message(event):
     SPREADSHEET_ID = '12WFiY5OpzRsqgagld_pOqSeknaYcWtVv1iKie3JvonY'
 
     user_message = event.message.text.strip()
+    today = datetime.date.today()
 
-    # ✅ 1. ดึงวันที่
-    date_match = re.search(r'วันที่\s*[🎉\s]*([\d/]+)', user_message)
-    if not date_match:
-        reply_text = "กรุณาระบุวันที่ เช่น 🎉วันที่ 4/11/68"
-    else:
-        date_str = date_match.group(1).strip()
+    # ✅ ตรวจสอบว่าเป็นการ “สอบถามยอด” หรือ “ส่งยอดขาย”
+    is_query = bool(re.search(r'ยอด', user_message))
 
-        # ✅ 2. แยกบรรทัด และอ่านชื่อ + ยอด
-        lines = user_message.splitlines()
-        sales = {}
-        current_person = None
-
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-
-            # ข้ามบรรทัดที่มีคำว่า "วันที่"
-            if 'วันที่' in line:
-                continue
-
-            # ตัดคำนำหน้า
-            line = re.sub(r'ส่งยอดขาย\s*ร้าน\s*', '', line)
-            line = re.sub(r'Your\s*Nails\s*💅🏻?', '', line, flags=re.IGNORECASE)
-
-            # ✅ ถ้าไม่มีตัวเลขเลย -> ชื่อพนักงาน
-            if not re.search(r'\d', line):
-                current_person = line
-                sales[current_person] = []
-            elif current_person:
-                # ✅ แปลงยอด เช่น 1.2,430 → 2430 (ไม่มีทศนิยม)
-                m = re.search(r'([\d.,]+)', line)
-                if m:
-                    num_str = m.group(1)
-                    # ลบทุกจุดและคอมม่าออก
-                    num_str = num_str.replace('.', '').replace(',', '')
-                    try:
-                        value = int(num_str)
-                    except:
-                        value = 0
-                    sales[current_person].append(value)
-
-        # ✅ 3. รวมยอดต่อคน
-        total_by_person = {p: sum(v) for p, v in sales.items() if p.strip()}
-
-        # ✅ 4. เขียนลง Google Sheet
+    # -----------------------------------
+    # ✅ กรณีสอบถามยอด
+    # -----------------------------------
+    if is_query and not re.search(r'ส่งยอดขาย', user_message):
         creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
         gc = gspread.authorize(creds)
         sh = gc.open_by_key(SPREADSHEET_ID)
         worksheet = sh.sheet1
-
         records = worksheet.get_all_records()
 
-        # ✅ ลบคอลัมน์ "Your Nails 💅🏻" ออกจากข้อมูลเก่า
-        all_names = set()
-        for r in records:
-            for k in r.keys():
-                if k not in ['วันที่', 'date', '', 'Your Nails 💅🏻']:
-                    all_names.add(k)
-        for n in total_by_person.keys():
-            if n.strip() and n not in ['Your Nails 💅🏻']:
-                all_names.add(n)
-        all_names = sorted(list(all_names))
+        # ตรวจสอบว่าเป็นการขอดู “ยอดรวมเดือน”
+        month_match = re.search(r'ยอด(?:รวม)?\s*เดือน\s*(\d{1,2})', user_message)
+        if month_match:
+            month = int(month_match.group(1))
+            year_th = today.year + 543
+            total_by_person = {}
 
-        # ✅ รวมข้อมูลเก่าเป็น dict
-        date_dict = {}
-        for r in records:
-            d = r.get('วันที่') or r.get('date')
-            if d and str(d).strip() != 'รวม':
-                date_dict[d] = {n: int(r.get(n, 0) or 0) for n in all_names}
+            for r in records:
+                date_str = str(r.get('วันที่') or '').strip()
+                if not date_str or date_str == 'รวม':
+                    continue
+                m = re.match(r'(\d{1,2})[/-](\d{1,2})[/-]?(\d{2,4})?', date_str)
+                if not m:
+                    continue
+                d, mth, y = m.groups()
+                mth = int(mth)
+                if mth != month:
+                    continue
 
-        # ✅ รวมยอดวันใหม่ (ถ้ามีวันเดิมอยู่แล้ว -> บวกเพิ่ม)
-        if date_str in date_dict:
-            for n in all_names:
-                date_dict[date_str][n] = date_dict[date_str].get(n, 0) + total_by_person.get(n, 0)
+                for k, v in r.items():
+                    if k not in ['วันที่', 'date', 'รวม', '']:
+                        total_by_person[k] = total_by_person.get(k, 0) + int(v or 0)
+
+            if not total_by_person:
+                reply_text = f"📅 ไม่พบข้อมูลยอดรวมเดือน {month}"
+            else:
+                reply_text = (
+                    f"📊 ยอดรวมเดือน {month}\n"
+                    + "\n".join([f"{n}: {v}฿" for n, v in total_by_person.items()])
+                )
+
         else:
-            date_dict[date_str] = {n: total_by_person.get(n, 0) for n in all_names}
+            # ตรวจสอบยอดรายวัน
+            date_match = re.search(r'ยอด(?:วันที่)?\s*([\d/\\-]+)', user_message)
+            if date_match:
+                date_str = date_match.group(1).strip()
 
-        # ✅ สร้างตารางใหม่
-        header = ['วันที่'] + all_names
-        rows = [header]
-        for d in sorted(date_dict.keys()):
-            row = [d] + [date_dict[d].get(n, 0) for n in all_names]
-            rows.append(row)
+                # กรณีผู้ใช้พิมพ์ “ยอดวันที่ 6” → ใช้เดือนและปีปัจจุบัน
+                if re.match(r'^\d{1,2}$', date_str):
+                    date_str = f"{date_str}/{today.month}/{str(today.year+543)[-2:]}"
+                elif '-' in date_str:
+                    date_str = date_str.replace('-', '/')
 
-        # ✅ แถวรวม (รวมทุกวัน และมีเพียงแถวเดียว)
-        total_row = ['รวม'] + [sum(date_dict[d].get(n, 0) for d in date_dict.keys()) for n in all_names]
-        rows.append(total_row)
+                # หาวันที่ใน sheet
+                found = None
+                for r in records:
+                    if str(r.get('วันที่')).strip() == date_str:
+                        found = r
+                        break
 
-        # ✅ ล้างชีตและเขียนกลับ
-        worksheet.clear()
-        worksheet.append_rows(rows)
+                if not found:
+                    reply_text = f"📅 ไม่พบข้อมูลยอดวันที่ {date_str}"
+                else:
+                    reply_text = (
+                        f"📅 ยอดวันที่ {date_str}\n"
+                        + "\n".join([
+                            f"{k}: {v}฿" for k, v in found.items()
+                            if k not in ['วันที่', 'date', '', 'รวม']
+                        ])
+                    )
+            else:
+                reply_text = "พิมพ์เช่น ‘ยอดวันที่ 6/11/68’ หรือ ‘ยอดรวมเดือน 11’ เพื่อดูยอดค่ะ"
 
-        # ✅ ตอบกลับใน LINE
-        reply_text = (
-            f"📅 วันที่ {date_str}\n"
-            + "\n".join([f"{n}: {v}฿" for n, v in total_by_person.items()])
-        )
+    # -----------------------------------
+    # ✅ กรณีส่งยอดขาย (แบบเดิม)
+    # -----------------------------------
+    else:
+        # ดึงวันที่
+        date_match = re.search(r'วันที่\s*[🎉\s]*([\d/]+)', user_message)
+        if not date_match:
+            reply_text = "กรุณาระบุวันที่ เช่น 🎉วันที่ 4/11/68"
+        else:
+            date_str = date_match.group(1).strip()
+
+            # แยกบรรทัด และอ่านชื่อ + ยอด
+            lines = user_message.splitlines()
+            sales = {}
+            current_person = None
+
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                if 'วันที่' in line:
+                    continue
+
+                # ตัดคำหัว
+                line = re.sub(r'ส่งยอดขาย\s*ร้าน\s*', '', line)
+                line = re.sub(r'Your\s*Nails\s*💅🏻?', '', line, flags=re.IGNORECASE)
+                line = re.sub(r'^\d+\.', '', line).strip()  # ลบลำดับ เช่น "1." หรือ "2."
+
+                # ถ้าไม่มีเลข → ชื่อพนักงาน
+                if not re.search(r'\d', line):
+                    current_person = line
+                    sales[current_person] = []
+                    continue
+
+                if current_person:
+                    m = re.search(r'([\d,]+)', line)
+                    if m:
+                        num_str = m.group(1).replace('.', '').replace(',', '')
+                        try:
+                            value = int(num_str)
+                        except:
+                            value = 0
+                        sales[current_person].append(value)
+
+            # รวมยอด
+            total_by_person = {p: sum(v) for p, v in sales.items() if p.strip()}
+
+            # เขียนลง Google Sheet
+            creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
+            gc = gspread.authorize(creds)
+            sh = gc.open_by_key(SPREADSHEET_ID)
+            worksheet = sh.sheet1
+
+            records = worksheet.get_all_records()
+            all_names = set()
+            for r in records:
+                for k in r.keys():
+                    if k not in ['วันที่', 'date', '', 'Your Nails 💅🏻']:
+                        all_names.add(k)
+            for n in total_by_person.keys():
+                if n.strip() and n not in ['Your Nails 💅🏻']:
+                    all_names.add(n)
+            all_names = sorted(list(all_names))
+
+            date_dict = {}
+            for r in records:
+                d = r.get('วันที่') or r.get('date')
+                if d and str(d).strip() != 'รวม':
+                    date_dict[d] = {n: int(r.get(n, 0) or 0) for n in all_names}
+
+            if date_str in date_dict:
+                for n in all_names:
+                    date_dict[date_str][n] = date_dict[date_str].get(n, 0) + total_by_person.get(n, 0)
+            else:
+                date_dict[date_str] = {n: total_by_person.get(n, 0) for n in all_names}
+
+            header = ['วันที่'] + all_names
+            rows = [header]
+            for d in sorted(date_dict.keys()):
+                row = [d] + [date_dict[d].get(n, 0) for n in all_names]
+                rows.append(row)
+
+            total_row = ['รวม'] + [sum(date_dict[d].get(n, 0) for d in date_dict.keys()) for n in all_names]
+            rows.append(total_row)
+
+            worksheet.clear()
+            worksheet.append_rows(rows)
+
+            reply_text = (
+                f"📅 วันที่ {date_str}\n"
+                + "\n".join([f"{n}: {v}฿" for n, v in total_by_person.items()])
+            )
 
     # ✅ ส่งข้อความกลับ LINE
     with ApiClient(configuration) as api_client:
