@@ -79,14 +79,14 @@ def handle_message(event):
 
     user_message = event.message.text.strip()
 
-    # ✅ 1. ดึงวันที่ (กรอง emoji และช่องว่าง)
+    # ✅ 1. ดึงวันที่
     date_match = re.search(r'วันที่\s*[🎉\s]*([\d/]+)', user_message)
     if not date_match:
         reply_text = "กรุณาระบุวันที่ เช่น 🎉วันที่ 4/11/68"
     else:
         date_str = date_match.group(1).strip()
 
-        # ✅ 2. เตรียมบรรทัดทั้งหมด
+        # ✅ 2. แยกบรรทัด และอ่านชื่อ + ยอด
         lines = user_message.splitlines()
         sales = {}
         current_person = None
@@ -96,26 +96,34 @@ def handle_message(event):
             if not line:
                 continue
 
-            # ข้ามบรรทัดที่มีคำว่า 'วันที่'
+            # ข้ามบรรทัดที่มีคำว่า "วันที่"
             if 'วันที่' in line:
                 continue
 
-            # ล้างคำนำหน้า เช่น "ส่งยอดขาย ร้าน"
+            # ตัดคำนำหน้า
             line = re.sub(r'ส่งยอดขาย\s*ร้าน\s*', '', line)
+            line = re.sub(r'Your\s*Nails\s*💅🏻?', '', line, flags=re.IGNORECASE)
 
-            # ✅ ถ้าบรรทัดไม่มีตัวเลขเลย -> ถือว่าเป็นชื่อคน
+            # ✅ ถ้าไม่มีตัวเลขเลย -> ชื่อพนักงาน
             if not re.search(r'\d', line):
                 current_person = line
                 sales[current_person] = []
             elif current_person:
-                # ✅ ดึงยอดขาย เช่น 300, 200฿, 1,500
-                m = re.search(r'([\d,]+)\s*฿?', line)
+                # ✅ แปลงยอด เช่น 1.250, 1.1,250 → 1250
+                m = re.search(r'([\d.,]+)', line)
                 if m:
-                    value = int(m.group(1).replace(',', ''))
+                    num_str = m.group(1)
+                    num_str = num_str.replace(',', '')
+                    # ลบจุดทั้งหมด (เพื่อให้ 1.250 → 1250, 1.1,250 → 1250)
+                    num_str = re.sub(r'\.', '', num_str)
+                    try:
+                        value = int(num_str)
+                    except:
+                        value = 0
                     sales[current_person].append(value)
 
         # ✅ 3. รวมยอดต่อคน
-        total_by_person = {p: sum(v) for p, v in sales.items()}
+        total_by_person = {p: sum(v) for p, v in sales.items() if p.strip()}
 
         # ✅ 4. เขียนลง Google Sheet
         creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
@@ -125,41 +133,47 @@ def handle_message(event):
 
         records = worksheet.get_all_records()
 
-        # รวมชื่อทั้งหมด
+        # ✅ ลบคอลัมน์ "Your Nails 💅🏻" ออกจากข้อมูลเก่า
         all_names = set()
         for r in records:
             for k in r.keys():
-                if k != 'วันที่' and k != 'date' and k.strip() != '':
+                if k not in ['วันที่', 'date', '', 'Your Nails 💅🏻']:
                     all_names.add(k)
         for n in total_by_person.keys():
-            all_names.add(n)
+            if n.strip() and n not in ['Your Nails 💅🏻']:
+                all_names.add(n)
         all_names = sorted(list(all_names))
 
-        # ✅ รวมข้อมูลทุกวันที่เคยมี
+        # ✅ รวมข้อมูลเก่าเป็น dict
         date_dict = {}
         for r in records:
             d = r.get('วันที่') or r.get('date')
-            if d:
+            if d and str(d).strip() != 'รวม':
                 date_dict[d] = {n: int(r.get(n, 0) or 0) for n in all_names}
 
-        # ✅ อัปเดตข้อมูลของวันที่ใหม่
-        date_dict[date_str] = {n: total_by_person.get(n, 0) for n in all_names}
+        # ✅ รวมยอดวันใหม่ (ถ้ามีวันเดิมอยู่แล้ว -> บวกเพิ่ม)
+        if date_str in date_dict:
+            for n in all_names:
+                date_dict[date_str][n] = date_dict[date_str].get(n, 0) + total_by_person.get(n, 0)
+        else:
+            date_dict[date_str] = {n: total_by_person.get(n, 0) for n in all_names}
 
-        # ✅ สร้างข้อมูลเขียนกลับ
+        # ✅ สร้างตารางใหม่
         header = ['วันที่'] + all_names
         rows = [header]
         for d in sorted(date_dict.keys()):
             row = [d] + [date_dict[d].get(n, 0) for n in all_names]
             rows.append(row)
 
-        # ✅ แถวรวม
+        # ✅ แถวรวม (รวมทุกวัน และมีเพียงแถวเดียว)
         total_row = ['รวม'] + [sum(date_dict[d].get(n, 0) for d in date_dict.keys()) for n in all_names]
         rows.append(total_row)
 
+        # ✅ ล้างชีตและเขียนกลับ
         worksheet.clear()
         worksheet.append_rows(rows)
 
-        # ✅ ตอบกลับยอดรวม
+        # ✅ ตอบกลับใน LINE
         reply_text = (
             f"📅 วันที่ {date_str}\n"
             + "\n".join([f"{n}: {v}฿" for n, v in total_by_person.items()])
