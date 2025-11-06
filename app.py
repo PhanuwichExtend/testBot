@@ -109,13 +109,12 @@ def handle_message(event):
                 current_person = line
                 sales[current_person] = []
             elif current_person:
-                # ✅ แปลงยอด เช่น 1.250, 1.1,250 → 1250
+                # ✅ แปลงยอด เช่น 1.2,430 → 2430 (ไม่มีทศนิยม)
                 m = re.search(r'([\d.,]+)', line)
                 if m:
                     num_str = m.group(1)
-                    num_str = num_str.replace(',', '')
-                    # ลบจุดทั้งหมด (เพื่อให้ 1.250 → 1250, 1.1,250 → 1250)
-                    num_str = re.sub(r'\.', '', num_str)
+                    # ลบทุกจุดและคอมม่าออก
+                    num_str = num_str.replace('.', '').replace(',', '')
                     try:
                         value = int(num_str)
                     except:
