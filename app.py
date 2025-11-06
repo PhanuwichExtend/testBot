@@ -91,6 +91,7 @@ def handle_message(event):
     # 2. แยกแต่ละชื่อและยอดรวม
     lines = user_message.splitlines()
     data_lines = []
+    sales = {}
     # เตรียมข้อมูลสำหรับ Google Sheet
     import gspread
     from google.oauth2.service_account import Credentials
