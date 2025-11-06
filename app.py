@@ -80,14 +80,99 @@ def handle_message(event):
 
     user_message = event.message.text.strip()
 
-    # ✅ 1. ดึงวันที่
+    # ✅ ตรวจสอบว่าผู้ใช้ส่งยอดเงินสด
+    if re.search(r'ยอดเงินสด', user_message):
+        # ดึงวันที่ เช่น "ยอดเงินสด5/11/68"
+        date_match = re.search(r'ยอดเงินสด\s*([0-9/]+)', user_message)
+        if not date_match:
+            reply_text = "กรุณาระบุวันที่หลังคำว่า 'ยอดเงินสด' เช่น ยอดเงินสด5/11/68"
+        else:
+            date_str = date_match.group(1).strip()
+
+            # ✅ เก็บข้อความทั้งหมดต่อจาก "ยอดเงินสด"
+            text_after = user_message.split('ยอดเงินสด', 1)[1].strip()
+            # ลบคำวันที่ออก (เช่น '5/11/68')
+            text_after = re.sub(r'^\s*[0-9/]+\s*', '', text_after)
+            # ลบช่องว่างเกิน
+            text_after = re.sub(r'\s+', ' ', text_after).strip()
+
+            # ✅ เขียนลง Google Sheet
+            creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
+            gc = gspread.authorize(creds)
+            sh = gc.open_by_key(SPREADSHEET_ID)
+            worksheet = sh.sheet1
+
+            records = worksheet.get_all_records()
+
+            # ดึงรายชื่อคอลัมน์ทั้งหมด
+            all_names = set()
+            for r in records:
+                for k in r.keys():
+                    if k not in ['วันที่', 'date', '']:
+                        all_names.add(k)
+            all_names.add('ยอดเงินสด')
+            all_names = sorted(list(all_names))
+
+            # รวมข้อมูลเก่าเป็น dict
+            date_dict = {}
+            for r in records:
+                d = r.get('วันที่') or r.get('date')
+                if d and str(d).strip() != 'รวม':
+                    date_dict[d] = {n: r.get(n, '') for n in all_names}
+
+            # ถ้าวันที่ยังไม่มี ให้สร้างใหม่
+            if date_str not in date_dict:
+                date_dict[date_str] = {n: '' for n in all_names}
+
+            # ✅ บันทึกข้อความทั้งหมดลงในช่อง "ยอดเงินสด"
+            date_dict[date_str]['ยอดเงินสด'] = text_after
+
+            # ✅ สร้างตารางใหม่
+            header = ['วันที่'] + all_names
+            rows = [header]
+            for d in sorted(date_dict.keys()):
+                row = [d] + [date_dict[d].get(n, '') for n in all_names]
+                rows.append(row)
+
+            # ✅ แถวรวม (คำนวณเฉพาะช่องที่เป็นตัวเลข)
+            total_row = ['รวม']
+            for n in all_names:
+                col_sum = 0
+                for d in date_dict.keys():
+                    val = date_dict[d].get(n, '')
+                    try:
+                        col_sum += int(val)
+                    except:
+                        pass
+                total_row.append(col_sum if col_sum else '')
+            rows.append(total_row)
+
+            worksheet.clear()
+            worksheet.append_rows(rows)
+
+            reply_text = (
+                f"💰 บันทึกข้อความยอดเงินสดวันที่ {date_str} เรียบร้อยแล้ว!\n\n"
+                f"เนื้อหาที่เก็บ:\n{text_after}"
+            )
+
+        # ✅ ส่งข้อความกลับ LINE
+        with ApiClient(configuration) as api_client:
+            messaging_api = MessagingApi(api_client)
+            messaging_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=reply_text)]
+                )
+            )
+        return
+
+    # ✅ ถ้าเป็นข้อความรายงานยอดขาย (ทั่วไป)
     date_match = re.search(r'วันที่\s*[🎉\s]*([\d/]+)', user_message)
     if not date_match:
         reply_text = "กรุณาระบุวันที่ เช่น 🎉วันที่ 4/11/68"
     else:
         date_str = date_match.group(1).strip()
 
-        # ✅ 2. แยกบรรทัด และอ่านชื่อ + ยอด
         lines = user_message.splitlines()
         sales = {}
         current_person = None
@@ -133,11 +218,10 @@ def handle_message(event):
 
         # รวมยอดต่อคน
         total_by_person = {p: sum(v) for p, v in sales.items() if p.strip()}
-        # เพิ่ม block 'ยอดเงินสด' เป็นคอลัมน์พิเศษ
         if cash_block:
             total_by_person['ยอดเงินสด'] = "\n".join(cash_block)
 
-          # ✅ เขียนลง Google Sheet
+        # ✅ เขียนลง Google Sheet
         creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
         gc = gspread.authorize(creds)
         sh = gc.open_by_key(SPREADSHEET_ID)
@@ -145,46 +229,39 @@ def handle_message(event):
 
         records = worksheet.get_all_records()
 
-        # ✅ รวมรายชื่อทั้งหมด (ชื่อพนักงาน + 'ยอดเงินสด')
         all_names = set()
         for r in records:
             for k in r.keys():
-                if k not in ['วันที่', 'date', '', None]:
+                if k not in ['วันที่', 'date', '']:
                     all_names.add(k)
-        for n in total_by_person.keys():
-            all_names.add(n)
+        all_names.update(total_by_person.keys())
         all_names = sorted(list(all_names))
 
-        # ✅ รวมข้อมูลเก่าจากชีตเป็น dict
         date_dict = {}
         for r in records:
             d = r.get('วันที่') or r.get('date')
             if d and str(d).strip() != 'รวม':
                 date_dict[d] = {n: r.get(n, '') for n in all_names}
 
-        # ✅ ถ้าวันที่นี้ยังไม่มีในชีต ให้เพิ่มใหม่
         if date_str not in date_dict:
             date_dict[date_str] = {n: '' for n in all_names}
 
-        # ✅ เติมค่าจาก total_by_person ลงในวันที่นั้น
-        for name, val in total_by_person.items():
-            date_dict[date_str][name] = val
+        for n, v in total_by_person.items():
+            date_dict[date_str][n] = v
 
-        # ✅ สร้างตารางใหม่
         header = ['วันที่'] + all_names
         rows = [header]
         for d in sorted(date_dict.keys()):
             row = [d] + [date_dict[d].get(n, '') for n in all_names]
             rows.append(row)
 
-        # ✅ แถวรวม
         total_row = ['รวม']
         for n in all_names:
             col_sum = 0
             for d in date_dict.keys():
-                v = date_dict[d].get(n, '')
+                val = date_dict[d].get(n, '')
                 try:
-                    col_sum += int(v)
+                    col_sum += int(val)
                 except:
                     pass
             total_row.append(col_sum if col_sum else '')
@@ -193,22 +270,17 @@ def handle_message(event):
         worksheet.clear()
         worksheet.append_rows(rows)
 
-        # ✅ สร้างข้อความตอบกลับ
-        reply_text = f"📅 บันทึกยอดขายวันที่ {date_str} เรียบร้อยแล้ว!\n"
-        for n, v in total_by_person.items():
-            if isinstance(v, list):
-                v = sum(v)
-            reply_text += f"\n{n}: {v}"
+        reply_text = f"✅ บันทึกยอดขายวันที่ {date_str} เรียบร้อยแล้ว!"
 
-        # ✅ ส่งข้อความกลับ LINE
-        with ApiClient(configuration) as api_client:
-            messaging_api = MessagingApi(api_client)
-            messaging_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=reply_text)]
-                )
+    # ✅ ตอบกลับ LINE
+    with ApiClient(configuration) as api_client:
+        messaging_api = MessagingApi(api_client)
+        messaging_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=reply_text)]
             )
+        )
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
