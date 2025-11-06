@@ -43,6 +43,27 @@ def index():
 # ✅ Webhook route ต้องตรงกับ URL ที่ตั้งใน LINE Developers
 
 
+@app.route("/webhook", methods=['POST'])
+def webhook():
+    signature = request.headers.get('X-Line-Signature', '')
+    body = request.get_data(as_text=True)
+
+    app.logger.info("Received webhook body: " + body)
+
+    try:
+        handler.handle(body, signature)
+    except InvalidSignatureError as e:
+        app.logger.error(f"InvalidSignatureError: {e}")
+        abort(400)
+    except Exception as e:
+        app.logger.error(f"Webhook error: {e}")
+        abort(400)
+
+    return 'OK'
+
+
+
+# ✅ ฟังก์ชันเมื่อมีคนส่งข้อความถึงบอท
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     import re
