@@ -66,122 +66,98 @@ def webhook():
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     import re
+    import gspread
+    from google.oauth2.service_account import Credentials
+    from linebot.v3.messaging import (
+        ReplyMessageRequest, TextMessage
+    )
+    from linebot.v3.messaging import ApiClient, MessagingApi
+
     SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
     CREDS_FILE = 'credentials.json'
     SPREADSHEET_ID = '12WFiY5OpzRsqgagld_pOqSeknaYcWtVv1iKie3JvonY'
 
     user_message = event.message.text.strip()
 
-    # 1. ดึงวันที่
-    date_match = re.search(r'วันที่[\s🎉]*([\d/]+)', user_message)
+    # ✅ 1. ดึงวันที่
+    date_match = re.search(r'วันที่\s*[🎉]*\s*([\d/]+)', user_message)
     if not date_match:
-        reply_text = "กรุณาระบุวันที่ เช่น 🎉วันที่ 🎉 4/11/6"
-        with ApiClient(configuration) as api_client:
-            messaging_api = MessagingApi(api_client)
-            messaging_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=reply_text)]
-                )
-            )
-        return
-    date_str = date_match.group(1).strip()
+        reply_text = "กรุณาระบุวันที่ เช่น 🎉วันที่ 4/11/68"
+    else:
+        date_str = date_match.group(1).strip()
 
+        # ✅ 2. แยกแต่ละพนักงาน
+        # ใช้ชื่อพนักงานเป็น header (บรรทัดที่ไม่มีเลขนำหน้า)
+        lines = user_message.splitlines()
+        sales = {}
+        current_person = None
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
 
-    # 2. แยกแต่ละชื่อและยอดรวม
-    lines = user_message.splitlines()
-    data_lines = []
-    sales = {}
-    # เตรียมข้อมูลสำหรับ Google Sheet
-    import gspread
-    from google.oauth2.service_account import Credentials
-    creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_key(SPREADSHEET_ID)
-    worksheet = sh.sheet1
+            # ตรวจเจอชื่อคน (ไม่มีตัวเลขนำหน้า)
+            if re.match(r'^[^\d\s].*$', line):
+                current_person = line
+                sales[current_person] = []
+            elif current_person:
+                # ดึงยอดขาย เช่น 430฿ หรือ 500 หรือ 1,200
+                m = re.search(r'([\d,]+)\s*฿?', line)
+                if m:
+                    value = int(m.group(1).replace(',', ''))
+                    sales[current_person].append(value)
 
-    # ดึงข้อมูลเดิมทั้งหมด
-    records = worksheet.get_all_records()
+        # ✅ 3. รวมยอดต่อคน
+        total_by_person = {p: sum(v) for p, v in sales.items()}
 
-    # รวมชื่อทุกคนที่มีใน records และรอบนี้
-    all_names = set()
-    for r in records:
-        for k in r.keys():
-            if k != 'วันที่' and k != 'date':
-                all_names.add(k)
-    for name in sales.keys():
-        all_names.add(name)
-    all_names = sorted(list(all_names))
+        # ✅ 4. เขียนลง Google Sheet
+        creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
+        gc = gspread.authorize(creds)
+        sh = gc.open_by_key(SPREADSHEET_ID)
+        worksheet = sh.sheet1
 
-    # สร้าง dict สำหรับแต่ละวัน
-    date_dict = {}
-    for r in records:
-        d = r.get('วันที่') or r.get('date')
-        if d:
-            date_dict[d] = {n: int(r.get(n, 0)) for n in all_names}
+        # ดึงข้อมูลเดิมทั้งหมด
+        records = worksheet.get_all_records()
 
-    # อัปเดตข้อมูลวันที่นี้ (แทนที่ของเดิม)
-    date_dict[date_str] = {n: sum(sales.get(n, [])) for n in all_names}
-
-    # สร้าง rows สำหรับเขียนลงชีท
-
-    header = ['วันที่'] + all_names
-    rows = [header]
-    for d in sorted(date_dict.keys()):
-        row = [d] + [date_dict[d].get(n, 0) for n in all_names]
-        rows.append(row)
-
-    # เพิ่มแถวรวม
-    total_row = ['รวม'] + [sum(date_dict[d][n] for d in date_dict.keys()) for n in all_names]
-    rows.append(total_row)
-
-    try:
-        worksheet.clear()
-        worksheet.append_rows(rows)
-        reply_text = '\n'.join([f"{date_str} {n}: {date_dict[date_str][n]}" for n in all_names])
-        reply_text += f"\nรวม: " + ', '.join([f"{n} {total_row[i+1]}" for i, n in enumerate(all_names)])
-    except Exception as e:
-        reply_text = f"เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Google Sheets: {e}"
+        # รวมชื่อทั้งหมด
         all_names = set()
         for r in records:
             for k in r.keys():
-                if k != 'วันที่' and k != 'date':
+                if k != 'วันที่' and k != 'date' and k != '':
                     all_names.add(k)
-        for name in sales.keys():
-            all_names.add(name)
+        for n in total_by_person.keys():
+            all_names.add(n)
         all_names = sorted(list(all_names))
 
-        # สร้าง dict สำหรับแต่ละวัน
+        # รวมข้อมูลวันที่ทั้งหมด
         date_dict = {}
         for r in records:
             d = r.get('วันที่') or r.get('date')
             if d:
-                date_dict[d] = {n: int(r.get(n, 0)) for n in all_names}
+                date_dict[d] = {n: int(r.get(n, 0) or 0) for n in all_names}
 
+        # อัปเดตข้อมูลของวันที่ใหม่
+        date_dict[date_str] = {n: total_by_person.get(n, 0) for n in all_names}
 
-    # อัปเดตข้อมูลวันที่นี้ (แทนที่ของเดิม)
-    date_dict[date_str] = {n: sum(sales.get(n, [])) for n in all_names}
+        # ✅ 5. สร้างข้อมูลสำหรับเขียนกลับ
+        header = ['วันที่'] + all_names
+        rows = [header]
+        for d in sorted(date_dict.keys()):
+            row = [d] + [date_dict[d].get(n, 0) for n in all_names]
+            rows.append(row)
 
-    # สร้าง rows สำหรับเขียนลงชีท
-    header = ['วันที่'] + all_names
-    rows = [header]
-    for d in sorted(date_dict.keys()):
-        row = [d] + [date_dict[d].get(n, 0) for n in all_names]
-        rows.append(row)
+        # แถวรวม
+        total_row = ['รวม'] + [sum(date_dict[d].get(n, 0) for d in date_dict.keys()) for n in all_names]
+        rows.append(total_row)
 
-    # เพิ่มแถวรวม
-    total_row = ['รวม'] + [sum(date_dict[d][n] for d in date_dict.keys()) for n in all_names]
-    rows.append(total_row)
-
-    try:
-        # ลบข้อมูลเดิมและเขียนใหม่ทั้งหมด
+        # ✅ เขียนกลับลงชีท
         worksheet.clear()
         worksheet.append_rows(rows)
-        reply_text = '\n'.join([f"{date_str} {n}: {date_dict[date_str][n]}" for n in all_names])
-        reply_text += f"\nรวม: " + ', '.join([f"{n} {total_row[i+1]}" for i, n in enumerate(all_names)])
-    except Exception as e:
-        reply_text = f"เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Google Sheets: {e}"
 
+        # ✅ 6. ตอบกลับ
+        reply_text = f"📅 วันที่ {date_str}\n" + '\n'.join([f"{n}: {v}฿" for n, v in total_by_person.items()])
+
+    # ✅ ส่งข้อความกลับ LINE
     with ApiClient(configuration) as api_client:
         messaging_api = MessagingApi(api_client)
         messaging_api.reply_message(
