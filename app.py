@@ -79,29 +79,36 @@ def handle_message(event):
 
     user_message = event.message.text.strip()
 
-    # ✅ 1. ดึงวันที่
-    date_match = re.search(r'วันที่\s*[🎉]*\s*([\d/]+)', user_message)
+    # ✅ 1. ดึงวันที่ (กรอง emoji และช่องว่าง)
+    date_match = re.search(r'วันที่\s*[🎉\s]*([\d/]+)', user_message)
     if not date_match:
         reply_text = "กรุณาระบุวันที่ เช่น 🎉วันที่ 4/11/68"
     else:
         date_str = date_match.group(1).strip()
 
-        # ✅ 2. แยกแต่ละพนักงาน
-        # ใช้ชื่อพนักงานเป็น header (บรรทัดที่ไม่มีเลขนำหน้า)
+        # ✅ 2. เตรียมบรรทัดทั้งหมด
         lines = user_message.splitlines()
         sales = {}
         current_person = None
+
         for line in lines:
             line = line.strip()
             if not line:
                 continue
 
-            # ตรวจเจอชื่อคน (ไม่มีตัวเลขนำหน้า)
-            if re.match(r'^[^\d\s].*$', line):
+            # ข้ามบรรทัดที่มีคำว่า 'วันที่'
+            if 'วันที่' in line:
+                continue
+
+            # ล้างคำนำหน้า เช่น "ส่งยอดขาย ร้าน"
+            line = re.sub(r'ส่งยอดขาย\s*ร้าน\s*', '', line)
+
+            # ✅ ถ้าบรรทัดไม่มีตัวเลขเลย -> ถือว่าเป็นชื่อคน
+            if not re.search(r'\d', line):
                 current_person = line
                 sales[current_person] = []
             elif current_person:
-                # ดึงยอดขาย เช่น 430฿ หรือ 500 หรือ 1,200
+                # ✅ ดึงยอดขาย เช่น 300, 200฿, 1,500
                 m = re.search(r'([\d,]+)\s*฿?', line)
                 if m:
                     value = int(m.group(1).replace(',', ''))
@@ -116,46 +123,47 @@ def handle_message(event):
         sh = gc.open_by_key(SPREADSHEET_ID)
         worksheet = sh.sheet1
 
-        # ดึงข้อมูลเดิมทั้งหมด
         records = worksheet.get_all_records()
 
         # รวมชื่อทั้งหมด
         all_names = set()
         for r in records:
             for k in r.keys():
-                if k != 'วันที่' and k != 'date' and k != '':
+                if k != 'วันที่' and k != 'date' and k.strip() != '':
                     all_names.add(k)
         for n in total_by_person.keys():
             all_names.add(n)
         all_names = sorted(list(all_names))
 
-        # รวมข้อมูลวันที่ทั้งหมด
+        # ✅ รวมข้อมูลทุกวันที่เคยมี
         date_dict = {}
         for r in records:
             d = r.get('วันที่') or r.get('date')
             if d:
                 date_dict[d] = {n: int(r.get(n, 0) or 0) for n in all_names}
 
-        # อัปเดตข้อมูลของวันที่ใหม่
+        # ✅ อัปเดตข้อมูลของวันที่ใหม่
         date_dict[date_str] = {n: total_by_person.get(n, 0) for n in all_names}
 
-        # ✅ 5. สร้างข้อมูลสำหรับเขียนกลับ
+        # ✅ สร้างข้อมูลเขียนกลับ
         header = ['วันที่'] + all_names
         rows = [header]
         for d in sorted(date_dict.keys()):
             row = [d] + [date_dict[d].get(n, 0) for n in all_names]
             rows.append(row)
 
-        # แถวรวม
+        # ✅ แถวรวม
         total_row = ['รวม'] + [sum(date_dict[d].get(n, 0) for d in date_dict.keys()) for n in all_names]
         rows.append(total_row)
 
-        # ✅ เขียนกลับลงชีท
         worksheet.clear()
         worksheet.append_rows(rows)
 
-        # ✅ 6. ตอบกลับ
-        reply_text = f"📅 วันที่ {date_str}\n" + '\n'.join([f"{n}: {v}฿" for n, v in total_by_person.items()])
+        # ✅ ตอบกลับยอดรวม
+        reply_text = (
+            f"📅 วันที่ {date_str}\n"
+            + "\n".join([f"{n}: {v}฿" for n, v in total_by_person.items()])
+        )
 
     # ✅ ส่งข้อความกลับ LINE
     with ApiClient(configuration) as api_client:
