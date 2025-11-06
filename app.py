@@ -91,66 +91,93 @@ def handle_message(event):
     # 2. แยกแต่ละชื่อและยอดรวม
     lines = user_message.splitlines()
     data_lines = []
-    found_date = False
-    for line in lines:
-        if 'วันที่' in line:
-            found_date = True
-            continue
-        if not found_date:
-            continue
-        data_lines.append(line)
+    # เตรียมข้อมูลสำหรับ Google Sheet
+    import gspread
+    from google.oauth2.service_account import Credentials
+    creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
+    gc = gspread.authorize(creds)
+    sh = gc.open_by_key(SPREADSHEET_ID)
+    worksheet = sh.sheet1
 
-    sales = {}
-    current_name = None
-    for line in data_lines:
-        line = line.strip()
-        if not line:
-            continue
-        # ถ้าเป็นชื่อใหม่
-        if not re.match(r'^[0-9]', line):
-            current_name = line.replace(' ', '')
-            sales[current_name] = []
-        elif current_name:
-            # ตัดเลขลำดับหัวข้อ เช่น 1.500 หรือ 2.800 ให้เหลือแค่ 500, 800
-            m = re.match(r'\d+\.(\d+)', line)
-            if m:
-                try:
-                    sales[current_name].append(int(m.group(1)))
-                except:
-                    pass
-            else:
-                # ถ้าไม่ใช่รูปแบบหัวข้อ ให้ดึงเลขจำนวนเต็มทั้งหมดในบรรทัด
-                nums = re.findall(r'\d+', line)
-                for n in nums:
-                    try:
-                        sales[current_name].append(int(n))
-                    except:
-                        pass
+    # ดึงข้อมูลเดิมทั้งหมด
+    records = worksheet.get_all_records()
 
-    summary = {name: sum(vals) for name, vals in sales.items()}
+    # รวมชื่อทุกคนที่มีใน records และรอบนี้
+    all_names = set()
+    for r in records:
+        for k in r.keys():
+            if k != 'วันที่' and k != 'date':
+                all_names.add(k)
+    for name in sales.keys():
+        all_names.add(name)
+    all_names = sorted(list(all_names))
 
-    # 4. อัปเดต Google Sheets (แทนที่ยอดเดิมถ้ามีวันที่+ชื่อซ้ำ)
+    # สร้าง dict สำหรับแต่ละวัน
+    date_dict = {}
+    for r in records:
+        d = r.get('วันที่') or r.get('date')
+        if d:
+            date_dict[d] = {n: int(r.get(n, 0)) for n in all_names}
+
+    # อัปเดตข้อมูลวันที่นี้ (แทนที่ของเดิม)
+    date_dict[date_str] = {n: sum(sales.get(n, [])) for n in all_names}
+
+    # สร้าง rows สำหรับเขียนลงชีท
+
+    header = ['วันที่'] + all_names
+    rows = [header]
+    for d in sorted(date_dict.keys()):
+        row = [d] + [date_dict[d].get(n, 0) for n in all_names]
+        rows.append(row)
+
+    # เพิ่มแถวรวม
+    total_row = ['รวม'] + [sum(date_dict[d][n] for d in date_dict.keys()) for n in all_names]
+    rows.append(total_row)
+
     try:
-        import gspread
-        from google.oauth2.service_account import Credentials
-        creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
-        print("//////////////////")
-        print("Using credentials:", creds.service_account_email)
-        gc = gspread.authorize(creds)
-        sh = gc.open_by_key(SPREADSHEET_ID)
-        worksheet = sh.sheet1
-        records = worksheet.get_all_records()
-        for name, total in summary.items():
-            # หา row ที่ตรงกับวันที่และชื่อ
-            found_idx = None
-            for idx, row in enumerate(records, start=2):  # start=2 เพราะ row 1 เป็น header
-                if str(row.get('date')).strip() == date_str and str(row.get('name')).strip() == name:
-                    found_idx = idx
-                    break
-            if found_idx:
-                worksheet.delete_rows(found_idx)
-            worksheet.append_row([date_str, name, total])
-        reply_text = '\n'.join([f"{date_str} {name}: {total}" for name, total in summary.items()])
+        worksheet.clear()
+        worksheet.append_rows(rows)
+        reply_text = '\n'.join([f"{date_str} {n}: {date_dict[date_str][n]}" for n in all_names])
+        reply_text += f"\nรวม: " + ', '.join([f"{n} {total_row[i+1]}" for i, n in enumerate(all_names)])
+    except Exception as e:
+        reply_text = f"เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Google Sheets: {e}"
+        all_names = set()
+        for r in records:
+            for k in r.keys():
+                if k != 'วันที่' and k != 'date':
+                    all_names.add(k)
+        for name in sales.keys():
+            all_names.add(name)
+        all_names = sorted(list(all_names))
+
+        # สร้าง dict สำหรับแต่ละวัน
+        date_dict = {}
+        for r in records:
+            d = r.get('วันที่') or r.get('date')
+            if d:
+                date_dict[d] = {n: int(r.get(n, 0)) for n in all_names}
+
+
+    # อัปเดตข้อมูลวันที่นี้ (แทนที่ของเดิม)
+    date_dict[date_str] = {n: sum(sales.get(n, [])) for n in all_names}
+
+    # สร้าง rows สำหรับเขียนลงชีท
+    header = ['วันที่'] + all_names
+    rows = [header]
+    for d in sorted(date_dict.keys()):
+        row = [d] + [date_dict[d].get(n, 0) for n in all_names]
+        rows.append(row)
+
+    # เพิ่มแถวรวม
+    total_row = ['รวม'] + [sum(date_dict[d][n] for d in date_dict.keys()) for n in all_names]
+    rows.append(total_row)
+
+    try:
+        # ลบข้อมูลเดิมและเขียนใหม่ทั้งหมด
+        worksheet.clear()
+        worksheet.append_rows(rows)
+        reply_text = '\n'.join([f"{date_str} {n}: {date_dict[date_str][n]}" for n in all_names])
+        reply_text += f"\nรวม: " + ', '.join([f"{n} {total_row[i+1]}" for i, n in enumerate(all_names)])
     except Exception as e:
         reply_text = f"เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Google Sheets: {e}"
 
