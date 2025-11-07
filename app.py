@@ -250,6 +250,8 @@ def handle_message(event):
         else:
             reply_text = "📊 ยอดของ " + found_name + "\n" + "\n".join(lines)
             reply_text += f"\n\n💰 รวมทั้งหมด: {total}฿"
+            income = int(total * 0.4)
+            reply_text += f"\n💰 รวมรายได้ {income}฿"
 
         send_reply(event, reply_text)
         return
