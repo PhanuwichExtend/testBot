@@ -321,10 +321,31 @@ def handle_message(event):
                 line = re.sub(r'ส่งยอดขาย\s*ร้าน\s*', '', line)
                 line = re.sub(r'Your\s*Nails\s*💅🏻?', '', line, flags=re.IGNORECASE)
                 line = re.sub(r'^\d+\.', '', line).strip()
+
+                # ถ้าบรรทัดมีชื่อกับยอดเงินในบรรทัดเดียวกัน เช่น "เป๊ปซี่\n1.500 ..." หรือ "เป๊ปซี่ 1.500 ..."
+                name_and_amount = re.match(r'^(\D+?)([\d,.]+)', line)
+                if name_and_amount:
+                    person = name_and_amount.group(1).strip()
+                    num_str = name_and_amount.group(2).replace(',', '').replace('.', '')
+                    try:
+                        value = int(num_str)
+                    except:
+                        value = 0
+                    if person:
+                        current_person = person
+                        if current_person not in sales:
+                            sales[current_person] = []
+                        sales[current_person].append(value)
+                    continue
+
+                # ถ้าบรรทัดไม่มีตัวเลขเลย ให้ถือว่าเป็นชื่อใหม่
                 if not re.search(r'\d', line):
                     current_person = line
-                    sales[current_person] = []
+                    if current_person not in sales:
+                        sales[current_person] = []
                     continue
+
+                # ถ้าบรรทัดมีตัวเลขและ current_person ถูกเซ็ตไว้
                 if current_person:
                     m = re.search(r'([\d,]+)', line)
                     if m:
