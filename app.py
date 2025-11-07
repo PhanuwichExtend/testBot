@@ -295,8 +295,15 @@ def handle_message(event):
     # -------------------------------------------------
     # ✅ ตรวจสอบกรณี “ส่งยอดขาย ร้าน Your Nails”
     # -------------------------------------------------
-    elif re.search(r'ส่งยอดขาย', user_message):
-        user_message = user_message.split('ยอดเงินสด', 1)[0].strip()
+    elif re.search(r'ส่งยอดขาย', user_message, re.UNICODE):
+        # Remove emojis and extra spaces before/after 'ส่งยอดขาย'
+        msg_clean = re.sub(r'[💅🏻🎉]+', '', user_message)
+        msg_clean = re.sub(r'\s+', ' ', msg_clean)
+        msg_clean = msg_clean.strip()
+        # Only keep content before 'ยอดเงินสด' if present
+        if 'ยอดเงินสด' in msg_clean:
+            msg_clean = msg_clean.split('ยอดเงินสด', 1)[0].strip()
+        user_message = msg_clean
 
         date_match = re.search(r'วันที่\s*[🎉\s]*([\d/]+)', user_message)
         if not date_match:
