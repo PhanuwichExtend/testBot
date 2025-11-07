@@ -484,19 +484,16 @@ def handle_message(event):
     worksheet = sh.sheet1
     records = worksheet.get_all_records()
 
-    # -------------------------------------------------
-    # ✅ เช็คคำไกล้เคียง
-    # -------------------------------------------------
-    def find_closest_question(user_input, faq_dict, cutoff=0.6):
-        """
-        ค้นหาคำถามใน FAQ ที่คล้ายกับข้อความของผู้ใช้
-        cutoff = 0.6 หมายถึงความคล้ายขั้นต่ำ (0-1)
-        """
-        questions = list(faq_dict.keys())
-        matches = difflib.get_close_matches(user_input, questions, n=1, cutoff=cutoff)
-        if matches:
-            return matches[0]
-        return None
+def find_closest_question(user_input, faq_dict, cutoff=0.6):
+    """
+    ค้นหาคำถามใน FAQ ที่คล้ายกับข้อความของผู้ใช้
+    cutoff = 0.6 หมายถึงความคล้ายขั้นต่ำ (0-1)
+    """
+    questions = list(faq_dict.keys())
+    matches = difflib.get_close_matches(user_input, questions, n=1, cutoff=cutoff)
+    if matches:
+        return matches[0]
+    return None
     # -------------------------------------------------
     # ✅ ฟังก์ชันดึงยอดรายวัน / รายเดือน
     # -------------------------------------------------
