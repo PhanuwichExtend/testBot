@@ -363,9 +363,14 @@ def handle_message(event):
             worksheet.clear()
             worksheet.append_rows(rows)
 
+            # Prepare detailed saved data for reply
+            saved_details = []
+            for n in all_names:
+                if n != 'ยอดเงินสด' and n in total_by_person:
+                    saved_details.append(f"{n}: {total_by_person[n]}฿")
             reply_text = (
-                f"📅 บันทึกยอดขายวันที่ {date_str} เรียบร้อยแล้ว!\n\n"
-                + "\n".join([f"{n}: {v}฿" for n, v in total_by_person.items()])
+                f"✅ อัพเดทยอดขายวันที่ {date_str} สำเร็จ!\n\n"
+                f"ข้อมูลที่บันทึก:\n" + "\n".join(saved_details)
             )
     FAQ = {
         "ร้านอยู่ที่ไหน": "แฟชั่นไอซ์แลน ค่ะ 💅",
