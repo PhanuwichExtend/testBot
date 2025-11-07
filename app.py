@@ -71,10 +71,10 @@ def handle_message(event):
     import gspread
     from google.oauth2.service_account import Credentials
     from linebot.v3.messaging import (
-        ReplyMessageRequest, TextMessage, ApiClient, MessagingApi
+        ReplyMessageRequest, TextMessage
     )
+    from linebot.v3.messaging import ApiClient, MessagingApi
 
-    # ---- Config ----
     SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
     CREDS_FILE = 'credentials.json'
     SPREADSHEET_ID = '12WFiY5OpzRsqgagld_pOqSeknaYcWtVv1iKie3JvonY'
@@ -82,25 +82,17 @@ def handle_message(event):
     user_message = event.message.text.strip()
     today = datetime.date.today()
 
-    # ---- เชื่อมต่อ Google Sheet ----
+    # ✅ สร้างตัวเชื่อมกับ Google Sheet
     creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
     gc = gspread.authorize(creds)
     sh = gc.open_by_key(SPREADSHEET_ID)
     worksheet = sh.sheet1
     records = worksheet.get_all_records()
 
-    # ---- ฟังก์ชันส่งข้อความกลับ ----
-    def send_reply(event, text):
-        with ApiClient(configuration) as api_client:
-            line_bot_api = MessagingApi(api_client)
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=text)]
-                )
-            )
-
-    # ---- ฟังก์ชันดึงยอดรายวัน ----
+    # -------------------------------------------------
+    # ✅ ฟังก์ชันดึงยอดรายวัน / รายเดือน
+    # -------------------------------------------------
+    
     def get_daily_total(date_str):
         for r in records:
             if str(r.get('วันที่')).strip() == date_str:
@@ -111,13 +103,13 @@ def handle_message(event):
                 return "\n".join(result_lines)
         return f"❌ ไม่พบข้อมูลวันที่ {date_str}"
 
-    # ---- ฟังก์ชันดึงยอดรายเดือน ----
     def get_month_total(month_num):
         month_sum = {}
         for r in records:
             d = str(r.get('วันที่') or '').strip()
             if not d or d == 'รวม':
                 continue
+            # แยกวันที่เป็นส่วน ๆ
             m = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})', d)
             if m:
                 _, m_str, _ = m.groups()
@@ -136,147 +128,245 @@ def handle_message(event):
         text.append(f"💰 รวมทั้งหมด: {sum(month_sum.values())}฿")
         return "\n".join(text)
 
-    # ---- ตรวจสอบประเภทข้อความ ----
-
-    # ✅ ยอดเงินรายวัน
+    # -------------------------------------------------
+    # ✅ ตรวจสอบกรณี “เช็คยอดรายวัน” เช่น "ยอดเงินวันที่ 6/11/68"
+    # -------------------------------------------------
     if re.search(r'ยอดเงินวันที่', user_message):
-        msg = user_message.replace('ยอดเงินวันที่', '').strip().replace('-', '/')
+        msg = user_message.replace('ยอดเงินวันที่', '').strip()
+        msg = msg.replace('-', '/')
         parts = msg.split('/')
         if len(parts) == 3:
             date_str = msg
         elif len(parts) == 1 and parts[0].isdigit():
-            date_str = f"{parts[0]}/{today.month}/{today.year % 100}"
+            day = int(parts[0])
+            date_str = f"{day}/{today.month}/{today.year % 100}"
         else:
-            return send_reply(event, "⚠️ รูปแบบไม่ถูกต้อง เช่น ยอดเงินวันที่ 6/11/68")
+            reply_text = "⚠️ รูปแบบไม่ถูกต้อง เช่น ยอดเงินวันที่ 6/11/68"
+            send_reply(event, reply_text)
+            return
 
-        return send_reply(event, get_daily_total(date_str))
+        reply_text = get_daily_total(date_str)
+        send_reply(event, reply_text)
+        return
 
-    # ✅ ยอดรวมรายเดือน
+    # -------------------------------------------------
+    # ✅ ตรวจสอบกรณี “ยอดเงินรวมเดือน”
+    # -------------------------------------------------
     if re.search(r'ยอดเงินรวมเดือน', user_message):
-        m = re.search(r'ยอดเงินรวมเดือน\s*(\d+)', user_message)
-        month_num = int(m.group(1)) if m else today.month
-        return send_reply(event, get_month_total(month_num))
+        month_match = re.search(r'ยอดเงินรวมเดือน\s*(\d+)', user_message)
+        if month_match:
+            month_num = int(month_match.group(1))
+        else:
+            month_num = today.month
+        reply_text = get_month_total(month_num)
+        send_reply(event, reply_text)
+        return
 
-    if re.fullmatch(r'ยอดเงินรวม|ยอดเงินเดือนนี้|ยอดเดือนนี้', user_message.strip()):
-        return send_reply(event, get_month_total(today.month))
+    # -------------------------------------------------
+    # ✅ ตรวจสอบกรณี “ยอดเงินรวม” (เดือนปัจจุบัน)
+    # -------------------------------------------------
+    if re.fullmatch(r'ยอดเงินรวม', user_message.strip()):
+        reply_text = get_month_total(today.month)
+        send_reply(event, reply_text)
+        return
 
-    # ✅ ยอดของชื่อบุคคล
+    if re.fullmatch(r'ยอดเงินเดือนนี้', user_message.strip()):
+        reply_text = get_month_total(today.month)
+        send_reply(event, reply_text)
+        return
+    if re.fullmatch(r'ยอดเดือนนี้', user_message.strip()):
+        reply_text = get_month_total(today.month)
+        send_reply(event, reply_text)
+        return
+
+          # -------------------------------------------------
+    # ✅ ตรวจสอบกรณี “ยอดเงินชื่อคน” เช่น "ยอดเงินมิน"
+    # -------------------------------------------------
     if re.search(r'ยอดเงิน', user_message) and not re.search(r'วันที่|รวม|สด', user_message):
+        # ดึงชื่อหลังคำว่า 'ยอดเงิน'
         name_match = re.search(r'ยอดเงิน\s*(.+)', user_message)
-        person_name = name_match.group(1).strip() if name_match else ""
+        if name_match:
+            person_name = name_match.group(1).strip()
+        else:
+            person_name = ""
+
         if not person_name:
-            return send_reply(event, "⚠️ กรุณาระบุชื่อหลังคำว่า 'ยอดเงิน' เช่น 'ยอดเงินมิน'")
+            reply_text = "⚠️ กรุณาระบุชื่อหลังคำว่า 'ยอดเงิน' เช่น 'ยอดเงินมิน'"
+            send_reply(event, reply_text)
+            return
 
-        available_names = {k.strip() for r in records for k in r.keys() if k not in ['วันที่', 'date', 'ยอดเงินสด', '']}
-        found_name = next((n for n in available_names if person_name in n or n in person_name), None)
+        # ✅ ค้นหาชื่อในคอลัมน์
+        available_names = set()
+        for r in records:
+            for k in r.keys():
+                if k not in ['วันที่', 'date', '', 'ยอดเงินสด']:
+                    available_names.add(k.strip())
+
+        # ตรวจสอบชื่อว่าอยู่ใน Sheet ไหม
+        found_name = None
+        for n in available_names:
+            if person_name in n or n in person_name:
+                found_name = n
+                break
+
         if not found_name:
-            return send_reply(event, f"❌ ไม่พบชื่อ '{person_name}'\nมีชื่อเหล่านี้: {', '.join(available_names)}")
+            reply_text = f"❌ ไม่พบชื่อ '{person_name}' ในข้อมูลค่ะ\nมีชื่อเหล่านี้: {', '.join(available_names)}"
+            send_reply(event, reply_text)
+            return
 
-        lines, total = [], 0
+        # ✅ ดึงยอดของคนนั้นทุกวัน
+        lines = []
+        total = 0
         for r in records:
             d = str(r.get('วันที่') or '').strip()
-            if not d or d == 'รวม': continue
+            if not d or d == 'รวม':
+                continue
             val = r.get(found_name)
-            try: num = int(val)
-            except: num = 0
+            try:
+                num = int(val)
+            except:
+                num = 0
             if num:
                 lines.append(f"{d} : {num}฿")
                 total += num
 
-        reply_text = f"📊 ยอดของ {found_name}\n" + "\n".join(lines) + f"\n\n💰 รวมทั้งหมด: {total}฿"
-        return send_reply(event, reply_text)
+        if not lines:
+            reply_text = f"❌ ไม่พบยอดของ '{found_name}' ในชีตค่ะ"
+        else:
+            reply_text = "📊 ยอดของ " + found_name + "\n" + "\n".join(lines)
+            reply_text += f"\n\n💰 รวมทั้งหมด: {total}฿"
 
-    # ✅ ยอดเงินสด
+        send_reply(event, reply_text)
+        return
+    # -------------------------------------------------
+    # ✅ ตรวจสอบกรณี “ยอดเงินสด”
+    # -------------------------------------------------
     if re.search(r'ยอดเงินสด', user_message):
         date_match = re.search(r'ยอดเงินสด\s*([0-9/]+)', user_message)
         if not date_match:
-            return send_reply(event, "กรุณาระบุวันที่ เช่น ยอดเงินสด5/11/68")
-
-        date_str = date_match.group(1).strip()
-        parts = date_str.split('/')
-        if len(parts) == 2:
-            thai_year = str(datetime.datetime.now().year + 543)[-2:]
-            date_str = f"{parts[0]}/{parts[1]}/{thai_year}"
-
-        text_after = re.sub(r'^ยอดเงินสด\s*[0-9/]+\s*', '', user_message).strip()
-
-        all_names = {k for r in records for k in r.keys() if k not in ['วันที่', 'date', '']}
-        all_names.add('ยอดเงินสด')
-        date_dict = {}
-        for r in records:
-            d = r.get('วันที่') or r.get('date')
-            if d and d != 'รวม':
-                date_dict[d] = {n: r.get(n, '') for n in all_names}
-        if date_str not in date_dict:
-            date_dict[date_str] = {n: '' for n in all_names}
-
-        date_dict[date_str]['ยอดเงินสด'] = text_after
-
-        header = ['วันที่'] + sorted(list(all_names))
-        rows = [header]
-        for d in sorted(date_dict.keys()):
-            row = [d] + [date_dict[d].get(n, '') for n in sorted(all_names)]
-            rows.append(row)
-
-        worksheet.clear()
-        worksheet.append_rows(rows)
-        return send_reply(event, f"💰 บันทึกยอดเงินสดวันที่ {date_str} เรียบร้อยแล้ว!\n\n{text_after}")
-
-    # ✅ ส่งยอดขายร้าน
-    if re.search(r'ส่งยอดขาย', user_message):
-        date_match = re.search(r'วันที่\s*([\d/]+)', user_message)
-        if not date_match:
-            return send_reply(event, "กรุณาระบุวันที่ เช่น 🎉วันที่ 6/11/68")
-
-        date_str = date_match.group(1).strip()
-        lines = user_message.splitlines()
-        sales, current_person = {}, None
-        for line in lines:
-            line = re.sub(r'ส่งยอดขาย\s*ร้าน\s*Your\s*Nails\s*💅🏻?', '', line)
-            if 'วันที่' in line or not line.strip():
-                continue
-            if not re.search(r'\d', line):
-                current_person = line.strip()
-                sales[current_person] = []
-                continue
-            if current_person:
-                m = re.search(r'([\d,]+)', line)
-                if m:
-                    val = int(m.group(1).replace(',', ''))
-                    sales[current_person].append(val)
-
-        total_by_person = {p: sum(v) for p, v in sales.items()}
-        all_names = {k for r in records for k in r.keys() if k not in ['วันที่', 'date', '']}
-        all_names |= set(total_by_person.keys())
-        all_names.add('ยอดเงินสด')
-
-        date_dict = {}
-        for r in records:
-            d = r.get('วันที่') or r.get('date')
-            if d and d != 'รวม':
-                date_dict[d] = {n: r.get(n, 0) for n in all_names}
-
-        if date_str in date_dict:
-            for n in total_by_person:
-                date_dict[date_str][n] = total_by_person[n]
+            reply_text = "กรุณาระบุวันที่หลังคำว่า 'ยอดเงินสด' เช่น ยอดเงินสด5/11/68"
         else:
-            date_dict[date_str] = {n: total_by_person.get(n, 0) for n in all_names}
-            date_dict[date_str]['ยอดเงินสด'] = ''
+            date_str = date_match.group(1).strip()
+            # ถ้า date_str ไม่มีปี (เช่น 6/11 หรือ 06/11) ให้เติมปีไทยปัจจุบัน
+            import datetime
+            parts = date_str.split('/')
+            if len(parts) == 2:
+                thai_year = str(datetime.datetime.now().year + 543)[-2:]
+                date_str = f"{parts[0]}/{parts[1]}/{thai_year}"
+            text_after = user_message.split('ยอดเงินสด', 1)[1].strip()
+            text_after = re.sub(r'^\s*[0-9/]+\s*', '', text_after).strip()
 
-        header = ['วันที่'] + sorted(list(all_names))
-        rows = [header]
-        for d in sorted(date_dict.keys()):
-            row = [d] + [date_dict[d].get(n, '') for n in sorted(all_names)]
-            rows.append(row)
+            all_names = set()
+            for r in records:
+                for k in r.keys():
+                    if k not in ['วันที่', 'date', '']:
+                        all_names.add(k)
+            all_names.add('ยอดเงินสด')
+            all_names = sorted(list(all_names))
 
-        worksheet.clear()
-        worksheet.append_rows(rows)
+            date_dict = {}
+            for r in records:
+                d = r.get('วันที่') or r.get('date')
+                if d and str(d).strip() != 'รวม':
+                    date_dict[d] = {n: r.get(n, '') for n in all_names}
 
-        reply_text = (
-            f"📅 บันทึกยอดขายวันที่ {date_str} เรียบร้อยแล้ว!\n\n"
-            + "\n".join([f"{n}: {v}฿" for n, v in total_by_person.items()])
-        )
-        return send_reply(event, reply_text)
+            if date_str not in date_dict:
+                date_dict[date_str] = {n: '' for n in all_names}
+
+            date_dict[date_str]['ยอดเงินสด'] = text_after
+
+            # ✅ เขียนกลับชีต
+            header = ['วันที่'] + all_names
+            rows = [header]
+            for d in sorted(date_dict.keys()):
+                row = [d] + [date_dict[d].get(n, '') for n in all_names]
+                rows.append(row)
+
+            worksheet.clear()
+            worksheet.append_rows(rows)
+
+            reply_text = (
+                f"💰 บันทึกยอดเงินสดวันที่ {date_str} เรียบร้อยแล้ว!\n\n"
+                f"เนื้อหาที่เก็บ:\n{text_after}"
+            )
+        send_reply(event, reply_text)
+        return
+
+    # -------------------------------------------------
+    # ✅ ตรวจสอบกรณี “ส่งยอดขาย ร้าน Your Nails”
+    # -------------------------------------------------
+    elif re.search(r'ส่งยอดขาย', user_message):
+        user_message = user_message.split('ยอดเงินสด', 1)[0].strip()
+
+        date_match = re.search(r'วันที่\s*[🎉\s]*([\d/]+)', user_message)
+        if not date_match:
+            reply_text = "กรุณาระบุวันที่ เช่น 🎉วันที่ 6/11/68"
+        else:
+            date_str = date_match.group(1).strip()
+            lines = user_message.splitlines()
+            sales = {}
+            current_person = None
+
+            for line in lines:
+                line = line.strip()
+                if not line or 'วันที่' in line:
+                    continue
+                line = re.sub(r'ส่งยอดขาย\s*ร้าน\s*', '', line)
+                line = re.sub(r'Your\s*Nails\s*💅🏻?', '', line, flags=re.IGNORECASE)
+                line = re.sub(r'^\d+\.', '', line).strip()
+                if not re.search(r'\d', line):
+                    current_person = line
+                    sales[current_person] = []
+                    continue
+                if current_person:
+                    m = re.search(r'([\d,]+)', line)
+                    if m:
+                        num_str = m.group(1).replace(',', '').replace('.', '')
+                        try:
+                            value = int(num_str)
+                        except:
+                            value = 0
+                        sales[current_person].append(value)
+
+            total_by_person = {p: sum(v) for p, v in sales.items() if p.strip()}
+
+            all_names = set()
+            for r in records:
+                for k in r.keys():
+                    if k not in ['วันที่', 'date', '', 'Your Nails 💅🏻']:
+                        all_names.add(k)
+            for n in total_by_person.keys():
+                if n.strip():
+                    all_names.add(n)
+            all_names.add('ยอดเงินสด')
+            all_names = sorted(list(all_names))
+
+            date_dict = {}
+            for r in records:
+                d = r.get('วันที่') or r.get('date')
+                if d and str(d).strip() != 'รวม':
+                    date_dict[d] = {n: r.get(n, 0) for n in all_names}
+
+            if date_str in date_dict:
+                for n in all_names:
+                    if n != 'ยอดเงินสด':
+                        date_dict[date_str][n] = total_by_person.get(n, date_dict[date_str].get(n, 0))
+            else:
+                date_dict[date_str] = {n: total_by_person.get(n, 0) for n in all_names}
+                date_dict[date_str]['ยอดเงินสด'] = ''
+
+            header = ['วันที่'] + all_names
+            rows = [header]
+            for d in sorted(date_dict.keys()):
+                row = [d] + [date_dict[d].get(n, '') for n in all_names]
+                rows.append(row)
+            worksheet.clear()
+            worksheet.append_rows(rows)
+
+            reply_text = (
+                f"📅 บันทึกยอดขายวันที่ {date_str} เรียบร้อยแล้ว!\n\n"
+                + "\n".join([f"{n}: {v}฿" for n, v in total_by_person.items()])
+            )
     FAQ = {
         "ร้านอยู่ที่ไหน": "แฟชั่นไอซ์แลน ค่ะ 💅",
         "ร้านเปิดกี่โมง": "ร้านเปิดทุกวัน 10:00 - 20:00 น. ค่ะ 💕",
@@ -657,12 +747,18 @@ def handle_message(event):
     "อยากได้เล็บแบบเคลือบมุก": "มีค่ะ เงาละมุนมาก 💖"
     }
 
-    for key, val in FAQ.items():
-        if key in user_message:
-            return send_reply(event, val)
+    user_lower = user_message.lower()
+    matched = None
+    for q, a in FAQ.items():
+        if q in user_lower:
+            matched = a
+            break
 
-    reply_text = (
-            "🤖 ขอโทษค่ะ หนูไม่เข้าใจ ลองพิมพ์ใหม่อีกครั้งนะคะ 💕\n"
+    if matched:
+        send_reply(event, matched)
+        return
+    else:
+        reply_text = (
             "พิมพ์:\n"
             "• ส่งยอดขาย ร้าน Your Nails → บันทึกยอดขาย\n"
             "• ยอดเงินสด5/11/68 → บันทึกยอดเงินสด\n"
@@ -671,31 +767,8 @@ def handle_message(event):
             "• ยอดเงินรวม → เดือนปัจจุบัน\n"
             "• ยอดเงินมิน → ยอดเงินของมิน"
         )
-    return  send_reply(event, reply_text)
-    
-    ##### send_reply(event, "🤖 ขอโทษค่ะ หนูไม่เข้าใจ ลองพิมพ์ใหม่อีกครั้งนะคะ 💕")
-    # user_lower = user_message.lower()
-    # matched = None
-    # for q, a in FAQ.items():
-    #     if q in user_lower:
-    #         matched = a
-    #         break
 
-    # if matched:
-    #     send_reply(event, matched)
-    #     return
-    # else:
-    #     reply_text = (
-    #         "พิมพ์:\n"
-    #         "• ส่งยอดขาย ร้าน Your Nails → บันทึกยอดขาย\n"
-    #         "• ยอดเงินสด5/11/68 → บันทึกยอดเงินสด\n"
-    #         "• ยอดเงินวันที่ 6/11/68 → ดูยอดวันนั้น\n"
-    #         "• ยอดเงินรวมเดือน 11 → ดูยอดรวมทั้งเดือน\n"
-    #         "• ยอดเงินรวม → เดือนปัจจุบัน\n"
-    #         "• ยอดเงินมิน → ยอดเงินของมิน"
-    #     )
-
-    # send_reply(event, reply_text)
+    send_reply(event, reply_text)
 
 
 # ✅ ฟังก์ชันส่งข้อความกลับ
