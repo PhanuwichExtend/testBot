@@ -3,6 +3,8 @@ import os
 import gspread
 import base64
 import os, json
+import difflib
+
 from google.oauth2.service_account import Credentials
 
 from linebot.v3 import WebhookHandler
@@ -80,7 +82,16 @@ def handle_message(event):
     SPREADSHEET_ID = '12WFiY5OpzRsqgagld_pOqSeknaYcWtVv1iKie3JvonY'
 
     user_message = event.message.text.strip()
-    today = datetime.date.today()
+    # ตรวจสอบว่า user พิมพ์คำถามตรงกับ FAQ หรือใกล้เคียง
+    if user_message in FAQ:
+        reply_text = FAQ[user_message]
+    else:
+        closest = find_closest_question(user_message, FAQ)
+        if closest:
+            reply_text = FAQ[closest]
+        else:
+            reply_text = "ขอโทษค่ะ หนูไม่เข้าใจคำถาม ลองพิมพ์ใหม่อีกครั้งได้นะคะ 💕"
+        today = datetime.date.today()
 
     # ✅ สร้างตัวเชื่อมกับ Google Sheet
     creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
@@ -89,6 +100,19 @@ def handle_message(event):
     worksheet = sh.sheet1
     records = worksheet.get_all_records()
 
+    # -------------------------------------------------
+    # ✅ เช็คคำไกล้เคียง
+    # -------------------------------------------------
+    def find_closest_question(user_input, faq_dict, cutoff=0.6):
+        """
+        ค้นหาคำถามใน FAQ ที่คล้ายกับข้อความของผู้ใช้
+        cutoff = 0.6 หมายถึงความคล้ายขั้นต่ำ (0-1)
+        """
+        questions = list(faq_dict.keys())
+        matches = difflib.get_close_matches(user_input, questions, n=1, cutoff=cutoff)
+        if matches:
+            return matches[0]
+        return None
     # -------------------------------------------------
     # ✅ ฟังก์ชันดึงยอดรายวัน / รายเดือน
     # -------------------------------------------------
