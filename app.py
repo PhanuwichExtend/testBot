@@ -369,7 +369,7 @@ def handle_message(event):
                 rows.append(row)
             worksheet.clear()
             worksheet.append_rows(rows)
-
+        
             # Prepare detailed saved data for reply
             saved_details = []
             for n in all_names:
@@ -379,6 +379,7 @@ def handle_message(event):
                 f"✅ อัพเดทยอดขายวันที่ {date_str} สำเร็จ!\n\n"
                 f"ข้อมูลที่บันทึก:\n" + "\n".join(saved_details)
             )
+            send_reply(event, reply_text)
     FAQ = {
         "ร้านอยู่ที่ไหน": "แฟชั่นไอซ์แลน ค่ะ 💅",
         "ร้านเปิดกี่โมง": "ร้านเปิดทุกวัน 10:00 - 20:00 น. ค่ะ 💕",
