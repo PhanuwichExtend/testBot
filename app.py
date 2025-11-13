@@ -4,6 +4,11 @@ import gspread
 import base64
 import os, json
 import difflib
+
+import matplotlib
+matplotlib.use('Agg')  # ✅ ปิด GUI mode สำหรับ server
+import matplotlib.pyplot as plt
+
 from google.oauth2.service_account import Credentials
 
 from linebot.v3 import WebhookHandler
@@ -332,6 +337,73 @@ def handle_message(event):
             lines.append(f"{i}. {name}: {total}฿ (รายได้ {income}฿)")
 
         reply_text = "\n".join(lines)
+        send_reply(event, reply_text)
+        return
+    # -------------------------------------------------
+    # ✅ กราฟอันดับรวมทั้งหมด
+    # -------------------------------------------------
+    if re.fullmatch(r'(กราฟอันดับ|กราฟอันดับรวม)', user_message.strip()):
+        person_totals = {}
+        for r in records:
+            d = str(r.get('วันที่') or '').strip()
+            if not d or d == 'รวม':
+                continue
+            for k, v in r.items():
+                if k not in ['วันที่', 'date', '', 'ยอดเงินสด']:
+                    try:
+                        person_totals[k] = person_totals.get(k, 0) + int(v)
+                    except:
+                        pass
+
+        if not person_totals:
+            reply_text = "❌ ไม่มีข้อมูลยอดรายชื่อ"
+            send_reply(event, reply_text)
+            return
+
+        chart_path = generate_rank_chart(person_totals, "กราฟอันดับรวมทั้งหมด", "rank_all.png")
+        full_url = request.url_root + chart_path.replace('\\', '/')
+        reply_text = f"📊 กราฟอันดับรวมทั้งหมด\n{full_url}"
+        send_reply(event, reply_text)
+        return
+    # -------------------------------------------------
+    # ✅ กราฟอันดับรายเดือน
+    # -------------------------------------------------
+    if re.search(r'กราฟอันดับเดือน', user_message):
+        month_match = re.search(r'กราฟอันดับเดือน\s*(\d+)', user_message)
+        if not month_match:
+            reply_text = "⚠️ กรุณาระบุเดือน เช่น 'กราฟอันดับเดือน 11'"
+            send_reply(event, reply_text)
+            return
+
+        month_num = int(month_match.group(1))
+        person_totals = {}
+        for r in records:
+            d = str(r.get('วันที่') or '').strip()
+            if not d or d == 'รวม':
+                continue
+
+            m = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})', d)
+            if not m:
+                continue
+            _, m_str, _ = m.groups()
+            if int(m_str) != month_num:
+                continue
+
+            for k, v in r.items():
+                if k not in ['วันที่', 'date', '', 'ยอดเงินสด']:
+                    try:
+                        person_totals[k] = person_totals.get(k, 0) + int(v)
+                    except:
+                        pass
+
+        if not person_totals:
+            reply_text = f"❌ ไม่พบข้อมูลเดือน {month_num}"
+            send_reply(event, reply_text)
+            return
+
+        chart_path = generate_rank_chart(person_totals, f"กราฟอันดับเดือน {month_num}", f"rank_month_{month_num}.png")
+        full_url = request.url_root + chart_path.replace('\\', '/')
+        reply_text = f"📊 กราฟอันดับเดือน {month_num}\n{full_url}"
         send_reply(event, reply_text)
         return
      # -------------------------------------------------
@@ -2324,6 +2396,32 @@ def handle_message(event):
 
     send_reply(event, reply_text)
 
+# ✅ ฟังก์ชันสร้างกราฟอันดับ
+def generate_rank_chart(person_totals, title, filename):
+    if not os.path.exists('static'):
+        os.makedirs('static')
+
+    names = list(person_totals.keys())
+    totals = list(person_totals.values())
+
+    plt.figure(figsize=(8, 5))
+    bars = plt.bar(names, totals)
+    plt.title(title)
+    plt.xlabel('ชื่อพนักงาน')
+    plt.ylabel('ยอดรวม (บาท)')
+    plt.xticks(rotation=30, ha='right')
+
+    # เพิ่ม label บนกราฟ
+    for bar in bars:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2, height,
+                 f'{int(height)}', ha='center', va='bottom', fontsize=9)
+
+    path = os.path.join('static', filename)
+    plt.tight_layout()
+    plt.savefig(path)
+    plt.close()
+    return path
 
 # ✅ ฟังก์ชันส่งข้อความกลับ
 def send_reply(event, text):
