@@ -180,12 +180,12 @@ def handle_message(event):
     # -------------------------------------------------
     # ✅ ตรวจสอบกรณี “ยอดเงินรวม” (เดือนปัจจุบัน)
     # -------------------------------------------------
-    if re.fullmatch(r'ยอดเงินรวม', user_message.strip()):
+    if re.fullmatch(r'ยอดเงินรวม|ยอด', user_message.strip()):
         reply_text = get_month_total(today.month)
         send_reply(event, reply_text)
         return
 
-    if re.fullmatch(r'ยอดเงินเดือนนี้', user_message.strip()):
+    if re.fullmatch(r'ยอดเงินเดือนนี้|ยอดรวม|ยอดรวมเดือนนี้', user_message.strip()):
         reply_text = get_month_total(today.month)
         send_reply(event, reply_text)
         return
@@ -253,6 +253,34 @@ def handle_message(event):
             income = int(total * 0.4)
             reply_text += f"\n💰 รวมรายได้ {income}฿"
 
+        send_reply(event, reply_text)
+        return
+    # -------------------------------------------------
+    # ✅ ตรวจสอบกรณี "อันดับ" "อันดับรายได้" "อันดับยอดเงิน"
+    # -------------------------------------------------
+    if re.fullmatch(r'(อันดับ|อันดับรายได้|อันดับยอดเงิน)', user_message.strip()):
+        # สร้าง dict รวมยอดเงินแต่ละคน
+        person_totals = {}
+        for r in records:
+            d = str(r.get('วันที่') or '').strip()
+            if not d or d == 'รวม':
+                continue
+            for k, v in r.items():
+                if k not in ['วันที่', 'date', '', 'ยอดเงินสด']:
+                    try:
+                        person_totals[k] = person_totals.get(k, 0) + int(v)
+                    except:
+                        pass
+        # จัดอันดับจากมากไปน้อย
+        ranking = sorted(person_totals.items(), key=lambda x: x[1], reverse=True)
+        if not ranking:
+            reply_text = "❌ ไม่พบข้อมูลยอดเงินของแต่ละคนค่ะ"
+        else:
+            lines = []
+            for name, total in ranking:
+                income = int(total * 0.4)
+                lines.append(f"{name}: {total} รายได้รวม {income}")
+            reply_text = "\n".join(lines)
         send_reply(event, reply_text)
         return
     # -------------------------------------------------
