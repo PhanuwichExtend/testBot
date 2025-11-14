@@ -6,6 +6,7 @@ import os, json
 import difflib
 import re
 import matplotlib
+import datetime
 matplotlib.use('Agg')  # ✅ ปิด GUI mode สำหรับ server
 import matplotlib.pyplot as plt
 
