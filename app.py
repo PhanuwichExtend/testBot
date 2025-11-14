@@ -238,6 +238,7 @@ def handle_message(event):
         # ✅ ดึงยอดของคนนั้นทุกวัน
         lines = []
         total = 0
+        total_income = 0
         for r in records:
             d = str(r.get('วันที่') or '').strip()
             if not d or d == 'รวม':
@@ -253,16 +254,14 @@ def handle_message(event):
                     income = 600
                 lines.append(f"{d} : {num}฿ (รายได้ {income}฿)")
                 total += num
+                total_income += income
 
         if not lines:
             reply_text = f"❌ ไม่พบยอดของ '{found_name}' ในชีตค่ะ"
         else:
             reply_text = "📊 ยอดของ " + found_name + "\n" + "\n".join(lines)
             reply_text += f"\n\n💰 รวมทั้งหมด: {total}฿"
-            income = int(total * 0.4)
-            if income < 600:
-                income = 600
-            reply_text += f"\n💰 รวมรายได้ {income}฿"
+            reply_text += f"\n💰 รวมรายได้ {total_income}฿"
 
         send_reply(event, reply_text)
         return
