@@ -75,6 +75,7 @@ def handle_message(event):
     # -------------------------------------------------
     # ✅ ฟีเจอร์สอนบอท: "ถ้าถาม [คำถาม] ให้ตอบ [คำตอบ]"
     # -------------------------------------------------
+    user_message = event.message.text.strip()
     teach_match = re.match(r'ถ้าถาม\s+(.+?)\s+ให้ตอบ\s+(.+)', user_message)
     if teach_match:
         teach_q = teach_match.group(1).strip()
@@ -125,7 +126,7 @@ def handle_message(event):
     CREDS_FILE = 'credentials.json'
     SPREADSHEET_ID = '12WFiY5OpzRsqgagld_pOqSeknaYcWtVv1iKie3JvonY'
 
-    user_message = event.message.text.strip()
+    
     today = datetime.date.today()
     thai_year_short = (today.year + 543) % 100
 
