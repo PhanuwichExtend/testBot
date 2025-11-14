@@ -125,7 +125,6 @@ def handle_message(event):
                 return
     except Exception:
         pass
-    import datetime
     import gspread
     from google.oauth2.service_account import Credentials
     from linebot.v3.messaging import (
@@ -625,7 +624,6 @@ def handle_message(event):
         else:
             date_str = date_match.group(1).strip()
             # ถ้า date_str ไม่มีปี (เช่น 6/11 หรือ 06/11) ให้เติมปีไทยปัจจุบัน
-            import datetime
             parts = date_str.split('/')
             if len(parts) == 2:
                 thai_year = str(datetime.datetime.now().year + 543)[-2:]
