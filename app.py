@@ -114,7 +114,7 @@ def handle_message(event):
     # -------------------------------------------------
     # ✅ ฟีเจอร์สอนบอท: "ถ้าถาม [คำถาม] ให้ตอบ [คำตอบ]"
     # -------------------------------------------------
-    teach_match = re.match(r'ถ้าถาม\s+(.+?)\s+ให้ตอบ\s+(.+)', user_message)
+    teach_match = re.search(r'ถ้าถาม\s+(.+?)\s+ให้ตอบ\s+(.+)', user_message)
     if teach_match:
         teach_q = teach_match.group(1).strip()
         teach_a = teach_match.group(2).strip()
@@ -145,8 +145,10 @@ def handle_message(event):
     try:
         faq_sheet = sh.worksheet('FAQ_Sheet')
         faq_records = faq_sheet.get_all_records()
+        user_msg_norm = user_message.strip().lower()
         for r in faq_records:
-            if user_message.strip() == r.get('question', '').strip():
+            question_norm = str(r.get('question', '')).strip().lower()
+            if question_norm in user_msg_norm:
                 reply_text = r.get('answer', '')
                 send_reply(event, reply_text)
                 return
