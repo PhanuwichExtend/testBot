@@ -72,10 +72,20 @@ def webhook():
 # ✅ ฟังก์ชันเมื่อมีคนส่งข้อความถึงบอท
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
+    user_message = event.message.text.strip()
+    today = datetime.date.today()
+    thai_year_short = (today.year + 543) % 100
+
+    # ✅ สร้างตัวเชื่อมกับ Google Sheet (ต้องมาก่อนใช้งาน sh)
+    creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
+    gc = gspread.authorize(creds)
+    sh = gc.open_by_key(SPREADSHEET_ID)
+    worksheet = sh.sheet1
+    records = worksheet.get_all_records()
+
     # -------------------------------------------------
     # ✅ ฟีเจอร์สอนบอท: "ถ้าถาม [คำถาม] ให้ตอบ [คำตอบ]"
     # -------------------------------------------------
-    user_message = event.message.text.strip()
     teach_match = re.match(r'ถ้าถาม\s+(.+?)\s+ให้ตอบ\s+(.+)', user_message)
     if teach_match:
         teach_q = teach_match.group(1).strip()
