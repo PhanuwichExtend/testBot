@@ -288,10 +288,23 @@ def handle_message(event):
         else:
             lines = []
             for name, total in ranking:
-                income = int(total * 0.4)
-                if income < 600:
-                    income = 600
-                lines.append(f"{name}: {total} รายได้รวม {income}")
+                # คำนวณรายได้รวมแบบใหม่
+                person_income = 0
+                for r in records:
+                    d = str(r.get('วันที่') or '').strip()
+                    if not d or d == 'รวม':
+                        continue
+                    val = r.get(name)
+                    try:
+                        num = int(val)
+                    except:
+                        num = 0
+                    if num:
+                        income = int(num * 0.4)
+                        if income < 600:
+                            income = 600
+                        person_income += income
+                lines.append(f"{name}: {total} รายได้รวม {person_income}")
             reply_text = "\n".join(lines)
         send_reply(event, reply_text)
         return
@@ -339,8 +352,29 @@ def handle_message(event):
         ranking = sorted(person_totals.items(), key=lambda x: x[1], reverse=True)
         lines = [f"🏆 อันดับรายได้เดือน {month_num}"]
         for i, (name, total) in enumerate(ranking, start=1):
-            income = int(total * 0.4)
-            lines.append(f"{i}. {name}: {total}฿ (รายได้ {income}฿)")
+            # คำนวณรายได้รวมแบบใหม่ เฉพาะเดือนนั้น
+            person_income = 0
+            for r in records:
+                d = str(r.get('วันที่') or '').strip()
+                if not d or d == 'รวม':
+                    continue
+                m = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})', d)
+                if not m:
+                    continue
+                _, m_str, _ = m.groups()
+                if int(m_str) != month_num:
+                    continue
+                val = r.get(name)
+                try:
+                    num = int(val)
+                except:
+                    num = 0
+                if num:
+                    income = int(num * 0.4)
+                    if income < 600:
+                        income = 600
+                    person_income += income
+            lines.append(f"{i}. {name}: {total}฿ (รายได้ {person_income}฿)")
 
         reply_text = "\n".join(lines)
         send_reply(event, reply_text)
