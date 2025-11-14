@@ -248,7 +248,10 @@ def handle_message(event):
             except:
                 num = 0
             if num:
-                lines.append(f"{d} : {num}฿")
+                income = int(num * 0.4)
+                if income < 600:
+                    income = 600
+                lines.append(f"{d} : {num}฿ (รายได้ {income}฿)")
                 total += num
 
         if not lines:
@@ -422,7 +425,12 @@ def handle_message(event):
             date_str = date_match.group(1).replace("-", "/").strip()
         else:
             # ถ้าไม่ระบุวันที่ → ใช้วันที่วันนี้
-            date_str = f"{today.day}/{today.month}/{thai_year_short}"
+            date_str = f"{today.day:02d}/{today.month:02d}/{thai_year_short:02d}"
+        # ปรับวันที่ให้เป็น 2 หลักเสมอ เช่น 01/11/68
+        parts = date_str.split("/")
+        if len(parts) == 3:
+            day, month, year = parts
+            date_str = f"{int(day):02d}/{int(month):02d}/{year}"
 
         if not amount_match:
             reply_text = "⚠️ กรุณาระบุจำนวนทิป เช่น 'ส่งยอดทิป 100' หรือ 'ส่งยอดทิป 11/11/68 200'"
@@ -532,7 +540,10 @@ def handle_message(event):
             parts = date_str.split('/')
             if len(parts) == 2:
                 thai_year = str(datetime.datetime.now().year + 543)[-2:]
-                date_str = f"{parts[0]}/{parts[1]}/{thai_year}"
+                date_str = f"{int(parts[0]):02d}/{int(parts[1]):02d}/{thai_year}"
+            elif len(parts) == 3:
+                day, month, year = parts
+                date_str = f"{int(day):02d}/{int(month):02d}/{year}"
             text_after = user_message.split('ยอดเงินสด', 1)[1].strip()
             text_after = re.sub(r'^\s*[0-9/]+\s*', '', text_after).strip()
 
@@ -583,6 +594,11 @@ def handle_message(event):
             reply_text = "กรุณาระบุวันที่ เช่น 🎉วันที่ 6/11/68"
         else:
             date_str = date_match.group(1).strip()
+            # ปรับวันที่ให้เป็น 2 หลักเสมอ เช่น 01/11/68
+            parts = date_str.split("/")
+            if len(parts) == 3:
+                day, month, year = parts
+                date_str = f"{int(day):02d}/{int(month):02d}/{year}"
             lines = user_message.splitlines()
             sales = {}
             current_person = None
