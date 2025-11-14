@@ -6,6 +6,7 @@ import os, json
 import difflib
 import re
 import matplotlib
+import unicodedata
 import datetime
 matplotlib.use('Agg')  # ✅ ปิด GUI mode สำหรับ server
 import matplotlib.pyplot as plt
@@ -140,18 +141,31 @@ def handle_message(event):
         return
 
     # -------------------------------------------------
-    # ✅ ตรวจสอบคำถามที่สอนใน FAQ_Sheet ก่อนตอบ
-    # -------------------------------------------------
+# ตรวจสอบคำถามที่สอนใน FAQ_Sheet ก่อนตอบ
+# -------------------------------------------------
+    def normalize_text(text: str) -> str:
+        if text is None:
+            return ""
+        text = unicodedata.normalize("NFC", text)  # รวมสระ/วรรณยุกต์ให้เป็นก้อนเดียว
+        text = text.replace("\u200b", "")         # zero-width space
+        text = text.replace("\u200c", "")
+        text = text.replace("\u200d", "")
+        text = text.replace("\ufeff", "")
+        return text.strip().lower()
     try:
         faq_sheet = sh.worksheet('FAQ_Sheet')
         faq_records = faq_sheet.get_all_records()
-        user_msg_norm = user_message.strip().lower()
+        user_msg_norm = normalize_text(user_message)
+
         for r in faq_records:
-            question_norm = str(r.get('question', '')).strip().lower()
-            if question_norm in user_msg_norm:
+            q_raw = str(r.get('question', ''))
+            question_norm = normalize_text(q_raw)
+
+            if question_norm and question_norm in user_msg_norm:
                 reply_text = r.get('answer', '')
                 send_reply(event, reply_text)
                 return
+
     except Exception:
         pass
     # -------------------------------------------------
