@@ -113,7 +113,6 @@ def handle_message(event):
                 return
     except Exception:
         pass
-    import re
     import datetime
     import gspread
     from google.oauth2.service_account import Credentials
