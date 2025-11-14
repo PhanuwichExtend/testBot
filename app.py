@@ -125,12 +125,8 @@ def handle_message(event):
                 return
     except Exception:
         pass
-    import gspread
-    from google.oauth2.service_account import Credentials
-    from linebot.v3.messaging import (
-        ReplyMessageRequest, TextMessage
-    )
-    from linebot.v3.messaging import ApiClient, MessagingApi
+   
+    # ...existing code...
 
     SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
     CREDS_FILE = 'credentials.json'
