@@ -77,12 +77,39 @@ def handle_message(event):
     today = datetime.date.today()
     thai_year_short = (today.year + 543) % 100
 
-    # ✅ สร้างตัวเชื่อมกับ Google Sheet (ต้องมาก่อนใช้งาน sh)
+
+    
+   
+    # ...existing code...
+
+    SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+    CREDS_FILE = 'credentials.json'
+    SPREADSHEET_ID = '12WFiY5OpzRsqgagld_pOqSeknaYcWtVv1iKie3JvonY'
+
+    
+    today = datetime.date.today()
+    thai_year_short = (today.year + 543) % 100
+
+    # ✅ สร้างตัวเชื่อมกับ Google Sheet
     creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
     gc = gspread.authorize(creds)
     sh = gc.open_by_key(SPREADSHEET_ID)
     worksheet = sh.sheet1
     records = worksheet.get_all_records()
+
+    # -------------------------------------------------
+    # ✅ คำนวนคำไกล้เคียง
+    # -------------------------------------------------
+    def find_closest_question(user_input, faq_dict, cutoff=0.6):
+        """
+        ค้นหาคำถามใน FAQ ที่คล้ายกับข้อความของผู้ใช้
+        cutoff = 0.6 หมายถึงความคล้ายขั้นต่ำ (0-1)
+        """
+        questions = list(faq_dict.keys())
+        matches = difflib.get_close_matches(user_input, questions, n=1, cutoff=cutoff)
+        if matches:
+            return matches[0]
+        return None
 
     # -------------------------------------------------
     # ✅ ฟีเจอร์สอนบอท: "ถ้าถาม [คำถาม] ให้ตอบ [คำตอบ]"
@@ -125,38 +152,6 @@ def handle_message(event):
                 return
     except Exception:
         pass
-   
-    # ...existing code...
-
-    SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-    CREDS_FILE = 'credentials.json'
-    SPREADSHEET_ID = '12WFiY5OpzRsqgagld_pOqSeknaYcWtVv1iKie3JvonY'
-
-    
-    today = datetime.date.today()
-    thai_year_short = (today.year + 543) % 100
-
-    # ✅ สร้างตัวเชื่อมกับ Google Sheet
-    creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_key(SPREADSHEET_ID)
-    worksheet = sh.sheet1
-    records = worksheet.get_all_records()
-
-    # -------------------------------------------------
-    # ✅ คำนวนคำไกล้เคียง
-    # -------------------------------------------------
-    def find_closest_question(user_input, faq_dict, cutoff=0.6):
-        """
-        ค้นหาคำถามใน FAQ ที่คล้ายกับข้อความของผู้ใช้
-        cutoff = 0.6 หมายถึงความคล้ายขั้นต่ำ (0-1)
-        """
-        questions = list(faq_dict.keys())
-        matches = difflib.get_close_matches(user_input, questions, n=1, cutoff=cutoff)
-        if matches:
-            return matches[0]
-        return None
-
     # -------------------------------------------------
     # ✅ ฟังก์ชันดึงยอดรายวัน / รายเดือน
     # -------------------------------------------------
