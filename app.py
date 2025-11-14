@@ -72,6 +72,47 @@ def webhook():
 # ✅ ฟังก์ชันเมื่อมีคนส่งข้อความถึงบอท
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
+    # -------------------------------------------------
+    # ✅ ฟีเจอร์สอนบอท: "ถ้าถาม [คำถาม] ให้ตอบ [คำตอบ]"
+    # -------------------------------------------------
+    teach_match = re.match(r'ถ้าถาม\s+(.+?)\s+ให้ตอบ\s+(.+)', user_message)
+    if teach_match:
+        teach_q = teach_match.group(1).strip()
+        teach_a = teach_match.group(2).strip()
+        # เปิด/สร้างชีต FAQ_Sheet
+        try:
+            faq_sheet = sh.worksheet('FAQ_Sheet')
+        except Exception:
+            faq_sheet = sh.add_worksheet(title='FAQ_Sheet', rows=100, cols=2)
+            faq_sheet.append_row(['question', 'answer'])
+        # ตรวจสอบว่ามีคำถามนี้อยู่แล้วหรือยัง
+        faq_records = faq_sheet.get_all_records()
+        found = False
+        for r in faq_records:
+            if r.get('question', '').strip() == teach_q:
+                found = True
+                break
+        if not found:
+            faq_sheet.append_row([teach_q, teach_a])
+            reply_text = f"✅ สอนบอทเรียบร้อย! ถ้าถาม '{teach_q}' จะตอบ '{teach_a}'"
+        else:
+            reply_text = f"⚠️ มีคำถามนี้ในระบบแล้ว"
+        send_reply(event, reply_text)
+        return
+
+    # -------------------------------------------------
+    # ✅ ตรวจสอบคำถามที่สอนใน FAQ_Sheet ก่อนตอบ
+    # -------------------------------------------------
+    try:
+        faq_sheet = sh.worksheet('FAQ_Sheet')
+        faq_records = faq_sheet.get_all_records()
+        for r in faq_records:
+            if user_message.strip() == r.get('question', '').strip():
+                reply_text = r.get('answer', '')
+                send_reply(event, reply_text)
+                return
+    except Exception:
+        pass
     import re
     import datetime
     import gspread
