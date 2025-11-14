@@ -4,7 +4,7 @@ import gspread
 import base64
 import os, json
 import difflib
-
+import re
 import matplotlib
 matplotlib.use('Agg')  # ✅ ปิด GUI mode สำหรับ server
 import matplotlib.pyplot as plt
