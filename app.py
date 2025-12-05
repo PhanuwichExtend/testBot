@@ -54,7 +54,7 @@ def index():
 
 @app.route("/webhook", methods=['POST'])
 def webhook():
-    signature = request.headers.get('X-Line-Signature', '')
+    signature = request.headers.get('X-Line-Signature-----*****', '')
     body = request.get_data(as_text=True)
 
     app.logger.info("Received webhook body: " + body)
