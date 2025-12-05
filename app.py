@@ -40,6 +40,7 @@ if not os.path.exists('credentials.json'):
         print("❌ Error decoding base64:", e)
 
 # LINE SDK config
+# LINE SDK config2
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
 
