@@ -268,12 +268,14 @@ def handle_message(event):
     # ✅ ตรวจสอบกรณี “ยอดเงินชื่อคน” เช่น "ยอดเงินมิน"
     # -------------------------------------------------
     if re.search(r'ยอดเงิน', user_message) and not re.search(r'วันที่|รวม|สด', user_message):
-        # ดึงชื่อหลังคำว่า 'ยอดเงิน'
-        name_match = re.search(r'ยอดเงิน\s*(.+)', user_message)
-        if name_match:
-            person_name = name_match.group(1).strip()
+        # รองรับรูปแบบ 'ยอดเงิน<ชื่อ>เดือน <เลขเดือน>'
+        match = re.search(r'ยอดเงิน\s*([^\d]+?)(?:เดือน\s*(\d+))?$', user_message)
+        if match:
+            person_name = match.group(1).strip()
+            month_num = match.group(2)
         else:
             person_name = ""
+            month_num = None
 
         if not person_name:
             reply_text = "⚠️ กรุณาระบุชื่อหลังคำว่า 'ยอดเงิน' เช่น 'ยอดเงินมิน'"
@@ -299,7 +301,7 @@ def handle_message(event):
             send_reply(event, reply_text)
             return
 
-        # ✅ ดึงยอดของคนนั้นทุกวัน
+        # ✅ ดึงยอดของคนนั้นทุกวัน (ถ้าไม่ระบุเดือน)
         lines = []
         total = 0
         total_income = 0
@@ -307,6 +309,14 @@ def handle_message(event):
             d = str(r.get('วันที่') or '').strip()
             if not d or d == 'รวม':
                 continue
+            # ถ้าระบุเดือน ให้กรองเฉพาะเดือนนั้น
+            if month_num:
+                m = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})', d)
+                if not m:
+                    continue
+                _, m_str, _ = m.groups()
+                if int(m_str) != int(month_num):
+                    continue
             val = r.get(found_name)
             try:
                 num = int(val)
@@ -321,9 +331,15 @@ def handle_message(event):
                 total_income += income
 
         if not lines:
-            reply_text = f"❌ ไม่พบยอดของ '{found_name}' ในชีตค่ะ"
+            if month_num:
+                reply_text = f"❌ ไม่พบยอดของ '{found_name}' ในเดือน {month_num} ในชีตค่ะ"
+            else:
+                reply_text = f"❌ ไม่พบยอดของ '{found_name}' ในชีตค่ะ"
         else:
-            reply_text = "📊 ยอดของ " + found_name + "\n" + "\n".join(lines)
+            if month_num:
+                reply_text = f"📊 ยอดของ {found_name} เดือน {month_num}\n" + "\n".join(lines)
+            else:
+                reply_text = "📊 ยอดของ " + found_name + "\n" + "\n".join(lines)
             reply_text += f"\n\n💰 รวมทั้งหมด: {total}฿"
             reply_text += f"\n💰 รวมรายได้ {total_income}฿"
 
@@ -711,7 +727,7 @@ def handle_message(event):
             lines = user_message.splitlines()
             # --- กำหนด mapping ชื่อหลัก ---
             name_aliases = {
-                "เป๊ปซี่": ["เป๊ปซี่", "เป๊ปชี่", "เป๊ป"],
+                "เป๊ปซี่": ["เป๊ปซี่", "เป๊ปชี่", "เป๊ป","pepsi","Pepsi"],
                 "อีฟ": ["อีฟ"]
                 # เพิ่มชื่ออื่น ๆ ได้ตามต้องการ
             }
