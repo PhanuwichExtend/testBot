@@ -58,7 +58,7 @@ def index():
 @app.route("/webhook", methods=['POST'])
 def webhook():
     
-    signature = request.headers.get('X-Line-Signature----task teef', '')
+    signature = request.headers.get('X-Line-Signature', '')
 
     body = request.get_data(as_text=True)
 
