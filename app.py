@@ -857,12 +857,62 @@ def handle_message(event):
 
     if user_message in FAQ:
         reply_text = FAQ[user_message]
-    else:
-        closest = find_closest_question(user_message, FAQ)
-        if closest:
-            reply_text = FAQ[closest]
-        else:
+        send_reply(event, reply_text)
+        return
+    closest = find_closest_question(user_message, FAQ)
+    if closest:
+        reply_text = FAQ[closest]
+        send_reply(event, reply_text)
+        return
+
+    # --- เพิ่มตัวนับจำนวนครั้งที่ไม่เข้าใจ (per user) ---
+    # ใช้ Google Sheet ในการเก็บ count ต่อ user_id (หรือ user display name ถ้าไม่มี user_id)
+    user_id = getattr(event.source, 'user_id', None) or getattr(event.source, 'userId', None) or getattr(event.source, 'user', None) or 'unknown'
+    try:
+        # เปิด/สร้างชีตชื่อ 'Unknown_Count'
+        try:
+            count_sheet = sh.worksheet('Unknown_Count')
+        except Exception:
+            count_sheet = sh.add_worksheet(title='Unknown_Count', rows=100, cols=2)
+            count_sheet.append_row(['user_id', 'count'])
+        count_records = count_sheet.get_all_records()
+        found = False
+        for idx, r in enumerate(count_records, start=2):
+            if r.get('user_id') == user_id:
+                found = True
+                count = int(r.get('count', 0)) + 1
+                count_sheet.update_cell(idx, 2, count)
+                break
+        if not found:
+            count = 1
+            count_sheet.append_row([user_id, count])
+            idx = len(count_records) + 2
+        # ตอบกลับตามจำนวนครั้ง
+        if count < 5:
+            reply_text = "ขอโทษค่ะ หนูไม่เข้าใจคำถาม"
+            send_reply(event, reply_text)
+            return
+        if count == 5:
             reply_text = (
+                "ขอโทษค่ะ หนูไม่เข้าใจคำถาม ลองพิมพ์ใหม่อีกครั้งได้นะคะ 💕\n"
+                "พิมพ์:\n"
+                "• ส่งยอดขาย ร้าน Your Nails → บันทึกยอดขาย\n"
+                "• ยอดเงินสด5/11/68 → บันทึกยอดเงินสด\n"
+                "• ยอดเงินวันที่ 6/11/68 → ดูยอดวันนั้น\n"
+                "• ยอดเงินรวมเดือน 11 → ดูยอดรวมทั้งเดือน\n"
+                "• ยอดเงินรวม → เดือนปัจจุบัน\n"
+                "• ยอดเงินมิน → ยอดเงินของมิน"
+            )
+            send_reply(event, reply_text)
+            # reset count
+            count_sheet.update_cell(idx, 2, 0)
+            return
+        if count > 5:
+            count_sheet.update_cell(idx, 2, 1)
+            return
+    except Exception:
+        # ถ้า error ในการนับ ให้ตอบแบบเดิม
+        reply_text = (
             "ขอโทษค่ะ หนูไม่เข้าใจคำถาม ลองพิมพ์ใหม่อีกครั้งได้นะคะ 💕\n"
             "พิมพ์:\n"
             "• ส่งยอดขาย ร้าน Your Nails → บันทึกยอดขาย\n"
@@ -872,8 +922,7 @@ def handle_message(event):
             "• ยอดเงินรวม → เดือนปัจจุบัน\n"
             "• ยอดเงินมิน → ยอดเงินของมิน"
         )
-
-    send_reply(event, reply_text)
+        send_reply(event, reply_text)
 
 # ✅ ฟังก์ชันสร้างกราฟอันดับ
 def generate_rank_chart(person_totals, title, filename):
