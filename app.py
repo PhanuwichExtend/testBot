@@ -78,15 +78,59 @@ def webhook():
 
 
 # ✅ ฟังก์ชันเมื่อมีคนส่งข้อความถึงบอท
+
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
+    # -------------------------------------------------
+    # ✅ กรณี "ยอดร้าน เดือน X" และ "ยอดร้าน"
+    # -------------------------------------------------
     user_message = event.message.text.strip()
     today = datetime.date.today()
     thai_year_short = (today.year + 543) % 100
 
+    if re.fullmatch(r'ยอดร้าน', user_message.strip()):
+        # รวมยอดของทุกคนทุกเดือน (ข้าม 'วันที่', 'date', '', 'ยอดเงินสด', 'ทิป')
+        total_shop = 0
+        for r in records:
+            d = str(r.get('วันที่') or '').strip()
+            if not d or d == 'รวม':
+                continue
+            for k, v in r.items():
+                if k not in ['วันที่', 'date', '', 'ยอดเงินสด', 'ทิป']:
+                    try:
+                        total_shop += int(v)
+                    except:
+                        pass
+        owner_share = int(total_shop * 0.6)
+        reply_text = f"ยอดร้าน : {total_shop}฿\nยอดเงินพี่เมย์เจ้าของร้าน: {owner_share}฿"
+        send_reply(event, reply_text)
+        return
 
-    
-   
+    match_shop_month = re.fullmatch(r'ยอดร้าน\s*เดือน\s*(\d+)', user_message.strip())
+    if match_shop_month:
+        month_num = int(match_shop_month.group(1))
+        total_shop = 0
+        for r in records:
+            d = str(r.get('วันที่') or '').strip()
+            if not d or d == 'รวม':
+                continue
+            m = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})', d)
+            if not m:
+                continue
+            _, m_str, _ = m.groups()
+            if int(m_str) != month_num:
+                continue
+            for k, v in r.items():
+                if k not in ['วันที่', 'date', '', 'ยอดเงินสด', 'ทิป']:
+                    try:
+                        total_shop += int(v)
+                    except:
+                        pass
+        owner_share = int(total_shop * 0.6)
+        reply_text = f"ยอดร้าน : {total_shop}฿\nยอดเงินพี่เมย์เจ้าของร้าน: {owner_share}฿"
+        send_reply(event, reply_text)
+        return
+
     # ...existing code....
 
     SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
@@ -726,9 +770,11 @@ def handle_message(event):
                     date_str = f"{int(day):02d}/{int(month):02d}/{year}"
             lines = user_message.splitlines()
             # --- กำหนด mapping ชื่อหลัก ---
+
             name_aliases = {
-                "เป๊ปซี่": ["เป๊ปซี่", "เป๊ปชี่", "เป๊ป","pepsi","Pepsi"],
-                "อีฟ": ["อีฟ"]
+                "เป๊ปซี่": ["เป๊ปซี่", "เป๊ปชี่", "เป๊ป", "pepsi", "Pepsi"],
+                "อีฟ": ["อีฟ"],
+                "Vivian": ["Vivian", "vivian", "วิเวียน", "โอม"]
                 # เพิ่มชื่ออื่น ๆ ได้ตามต้องการ
             }
 
