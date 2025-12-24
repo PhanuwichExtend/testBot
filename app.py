@@ -81,6 +81,7 @@ def webhook():
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
+    
 
     user_message = event.message.text.strip()
     today = datetime.date.today()
@@ -97,6 +98,65 @@ def handle_message(event):
     worksheet = sh.sheet1
     records = worksheet.get_all_records()
 
+    # -------------------------------------------------
+    # ✅ ฟีเจอร์ เปอเซ็น (เปอร์เซ็นต์ยอดขายแต่ละคน)
+    # -------------------------------------------------
+    if re.fullmatch(r'เปอเซ็น', user_message.strip()):
+        # รวมยอดของทุกคนทุกเดือน
+        person_totals = {}
+        for r in records:
+            d = str(r.get('วันที่') or '').strip()
+            if not d or d == 'รวม':
+                continue
+            for k, v in r.items():
+                if k not in ['วันที่', 'date', '', 'ยอดเงินสด', 'ทิป']:
+                    try:
+                        person_totals[k] = person_totals.get(k, 0) + int(v)
+                    except:
+                        pass
+        total_shop = sum(person_totals.values())
+        if total_shop == 0:
+            reply_text = "❌ ไม่พบข้อมูลยอดขาย"
+        else:
+            lines = ["เปอร์เซ็นต์ยอดขายแต่ละคน (รวมทุกเดือน):"]
+            for name, total in sorted(person_totals.items(), key=lambda x: x[1], reverse=True):
+                percent = (total / total_shop) * 100
+                lines.append(f"{name}: {total}฿ ({percent:.2f}%)")
+            reply_text = "\n".join(lines)
+        send_reply(event, reply_text)
+        return
+
+    match_percent_month = re.fullmatch(r'เปอเซ็น\s*เดือน\s*(\d+)', user_message.strip())
+    if match_percent_month:
+        month_num = int(match_percent_month.group(1))
+        person_totals = {}
+        for r in records:
+            d = str(r.get('วันที่') or '').strip()
+            if not d or d == 'รวม':
+                continue
+            m = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})', d)
+            if not m:
+                continue
+            _, m_str, _ = m.groups()
+            if int(m_str) != month_num:
+                continue
+            for k, v in r.items():
+                if k not in ['วันที่', 'date', '', 'ยอดเงินสด', 'ทิป']:
+                    try:
+                        person_totals[k] = person_totals.get(k, 0) + int(v)
+                    except:
+                        pass
+        total_shop = sum(person_totals.values())
+        if total_shop == 0:
+            reply_text = f"❌ ไม่พบข้อมูลยอดขายเดือน {month_num}"
+        else:
+            lines = [f"เปอร์เซ็นต์ยอดขายแต่ละคน (เดือน {month_num}):"]
+            for name, total in sorted(person_totals.items(), key=lambda x: x[1], reverse=True):
+                percent = (total / total_shop) * 100
+                lines.append(f"{name}: {total}฿ ({percent:.2f}%)")
+            reply_text = "\n".join(lines)
+        send_reply(event, reply_text)
+        return
     # -------------------------------------------------
     # ✅ กรณี "ยอดร้าน เดือน X" และ "ยอดร้าน"
     # -------------------------------------------------
@@ -424,6 +484,10 @@ def handle_message(event):
                             income = 600
                         person_income += income
                 lines.append(f"{name}: {total} รายได้รวม {person_income}")
+            # เพิ่มยอดขายรวมและยอดเจ้าของร้าน
+            total_shop = sum(person_totals.values())
+            owner_share = int(total_shop * 0.6)
+            lines.append(f"\nยอดขายรวมของทั้งร้าน: {total_shop}฿\nยอดเงินที่เจ้าของร้านจะได้: {owner_share}฿")
             reply_text = "\n".join(lines)
         send_reply(event, reply_text)
         return
@@ -495,6 +559,10 @@ def handle_message(event):
                     person_income += income
             lines.append(f"{i}. {name}: {total}฿ (รายได้ {person_income}฿)")
 
+        # เพิ่มยอดขายรวมและยอดเจ้าของร้านสำหรับเดือนนั้น
+        total_shop = sum([total for _, total in ranking])
+        owner_share = int(total_shop * 0.6)
+        lines.append(f"\nยอดขายรวมของทั้งร้าน: {total_shop}฿\nยอดเงินที่เจ้าของร้านจะได้: {owner_share}฿")
         reply_text = "\n".join(lines)
         send_reply(event, reply_text)
         return
@@ -843,9 +911,25 @@ def handle_message(event):
             worksheet.clear()
             worksheet.append_rows(rows)
 
+
+            # เรียงลำดับยอดขายของวันนั้นและใส่อันดับ
+
+            sorted_sales = sorted(total_by_person.items(), key=lambda x: x[1], reverse=True)
+            rank_lines = []
+            for i, (name, value) in enumerate(sorted_sales):
+                income = int(value * 0.4)
+                if income < 600 and value > 0:
+                    income = 600
+                trophy = " 🏆" if i == 0 else ""
+                rank_lines.append(f"{name}: {value}฿ (รายได้ {income}฿){trophy}")
+
+            # รวมยอดขายทั้งร้านและยอดเงินเจ้าของร้าน (60%)
+            total_shop = sum(total_by_person.values())
+            owner_share = int(total_shop * 0.6)
             reply_text = (
                 f"📅 บันทึกยอดขายวันที่ {date_str} เรียบร้อยแล้ว!\n\n"
-                + "\n".join([f"{n}: {v}฿" for n, v in total_by_person.items()])
+                + "\n".join(rank_lines)
+                + f"\nยอดขายรวมของทั้งร้าน: {total_shop}฿\nยอดเงินที่เจ้าของร้านจะได้: {owner_share}฿"
             )
             send_reply(event, reply_text)
             return
