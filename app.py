@@ -81,13 +81,25 @@ def webhook():
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
-    # -------------------------------------------------
-    # ✅ กรณี "ยอดร้าน เดือน X" และ "ยอดร้าน"
-    # -------------------------------------------------
+
     user_message = event.message.text.strip()
     today = datetime.date.today()
     thai_year_short = (today.year + 543) % 100
 
+    SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+    CREDS_FILE = 'credentials.json'
+    SPREADSHEET_ID = '12WFiY5OpzRsqgagld_pOqSeknaYcWtVv1iKie3JvonY'
+
+    # ✅ สร้างตัวเชื่อมกับ Google Sheet
+    creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
+    gc = gspread.authorize(creds)
+    sh = gc.open_by_key(SPREADSHEET_ID)
+    worksheet = sh.sheet1
+    records = worksheet.get_all_records()
+
+    # -------------------------------------------------
+    # ✅ กรณี "ยอดร้าน เดือน X" และ "ยอดร้าน"
+    # -------------------------------------------------
     if re.fullmatch(r'ยอดร้าน', user_message.strip()):
         # รวมยอดของทุกคนทุกเดือน (ข้าม 'วันที่', 'date', '', 'ยอดเงินสด', 'ทิป')
         total_shop = 0
@@ -130,23 +142,6 @@ def handle_message(event):
         reply_text = f"ยอดร้าน : {total_shop}฿\nยอดเงินพี่เมย์เจ้าของร้าน: {owner_share}฿"
         send_reply(event, reply_text)
         return
-
-    # ...existing code....
-
-    SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-    CREDS_FILE = 'credentials.json'
-    SPREADSHEET_ID = '12WFiY5OpzRsqgagld_pOqSeknaYcWtVv1iKie3JvonY'
-
-    
-    today = datetime.date.today()
-    thai_year_short = (today.year + 543) % 100
-
-    # ✅ สร้างตัวเชื่อมกับ Google Sheet
-    creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_key(SPREADSHEET_ID)
-    worksheet = sh.sheet1
-    records = worksheet.get_all_records()
 
     # -------------------------------------------------
     # ✅ คำนวนคำไกล้เคียง
